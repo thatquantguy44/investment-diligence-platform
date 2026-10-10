@@ -42,7 +42,8 @@ class LocalStorage:
         self.write_jsonl(f"curated/01_entity_graph/{run_id}/product_manifest.jsonl", [product])
         return str(output)
 
-    def publish_research_product(self, run_id: str, records: list[dict], product: dict) -> str:
+    def publish_research_product(self, run_id: str, records: list[dict], product: dict, observations: list[dict] | None = None) -> str:
         output = self.write_jsonl(f"curated/02_technology_talent/{run_id}/research_works.jsonl", records)
+        self.write_jsonl(f"curated/02_technology_talent/{run_id}/technology_topic_observations.jsonl", observations or [])
         self.write_jsonl(f"curated/02_technology_talent/{run_id}/product_manifest.jsonl", [product])
         return str(output)

@@ -13,6 +13,7 @@ from diligence_pipelines.quality import validate_entities, validate_research_wor
 from diligence_pipelines.settings import Settings
 from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_openalex_works, fetch_sec_submissions, normalize_gleif_alias, normalize_openalex_works, normalize_sec_entity
 from diligence_pipelines.storage import build_storage
+from diligence_pipelines.technology import derive_topic_observation
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +156,7 @@ def run_technology_talent(query: str, max_results: int, settings: Settings) -> i
     if failed:
         print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))
         return 2
+    observations = [derive_topic_observation(records, query, run_id)]
     product = {
         "product_id": "technology_talent_research_works",
         "contract_version": "1.0.0",
@@ -165,10 +167,10 @@ def run_technology_talent(query: str, max_results: int, settings: Settings) -> i
         "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": source_record_id},
         "location": "storage://curated/02_technology_talent/" + run_id + "/research_works",
         "quality": [item.model_dump(mode="json") for item in quality],
-        "record_counts": {"research_works": len(records)},
+        "record_counts": {"research_works": len(records), "technology_topic_observations": len(observations)},
         "limitations": ["OpenAlex is research metadata, not a complete talent or patent database.", "Search results are not evidence of employment or company ownership."],
     }
-    storage.publish_research_product(run_id, records, product)
+    storage.publish_research_product(run_id, records, product, observations=observations)
     print(json.dumps({"run_id": run_id, "status": "published", "research_work_count": len(records), "materialization_id": run_id}, indent=2))
     return 0
 

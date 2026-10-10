@@ -1,6 +1,6 @@
 # Pipeline 02 — Technology and talent signals
 
-The initial slice uses OpenAlex research metadata to create evidence-backed `research_works` records. It is intentionally not an employment or technology-quality classifier. Patent adapters, inventor edges, institution edges, and deterministic topic aggregates are next.
+The initial slice uses OpenAlex research metadata to create evidence-backed `research_works` records and a deterministic `research_work_count` topic observation. It is intentionally not an employment or technology-quality classifier. Patent adapters, inventor edges, institution edges, and richer topic aggregates are next.
 
 Run a bounded search:
 

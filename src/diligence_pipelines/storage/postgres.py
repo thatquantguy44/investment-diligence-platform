@@ -83,6 +83,15 @@ class PostgresStorage:
                     PRIMARY KEY (work_id, run_id)
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.technology_topic_observations (
+                    observation_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (observation_id, run_id)
+                )
+            """)
         connection.commit()
 
     def write_raw(self, capture: RawCapture) -> str:
@@ -133,7 +142,7 @@ class PostgresStorage:
             self._connection.close()
             self._connection = None
 
-    def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any]) -> str:
+    def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], observations: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
         with connection.cursor() as cursor:
             for record in records:
@@ -142,6 +151,12 @@ class PostgresStorage:
                     VALUES (%s, %s, %s)
                     ON CONFLICT (work_id, run_id) DO UPDATE SET record = EXCLUDED.record
                 """, (record["work_id"], run_id, json.dumps(record, default=str)))
+            for observation in observations or []:
+                cursor.execute("""
+                    INSERT INTO diligence.technology_topic_observations (observation_id, run_id, record)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (observation_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (observation["observation_id"], run_id, json.dumps(observation, default=str)))
             cursor.execute("""
                 INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
                 VALUES (%s, %s, %s, %s)
