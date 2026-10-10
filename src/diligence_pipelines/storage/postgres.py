@@ -74,6 +74,15 @@ class PostgresStorage:
                     PRIMARY KEY (candidate_id, run_id)
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.research_works (
+                    work_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (work_id, run_id)
+                )
+            """)
         connection.commit()
 
     def write_raw(self, capture: RawCapture) -> str:
@@ -123,3 +132,20 @@ class PostgresStorage:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
+
+    def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any]) -> str:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for record in records:
+                cursor.execute("""
+                    INSERT INTO diligence.research_works (work_id, run_id, record)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (work_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (record["work_id"], run_id, json.dumps(record, default=str)))
+            cursor.execute("""
+                INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (materialization_id) DO NOTHING
+            """, (run_id, product["product_id"], product["pipeline_id"], json.dumps(product, default=str)))
+        connection.commit()
+        return f"postgresql://diligence/product_manifests/{run_id}"

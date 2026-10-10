@@ -75,6 +75,17 @@ class MatchCandidateRecord(BaseRecord):
     review_status: Literal["unreviewed", "accepted", "rejected"] = "unreviewed"
 
 
+class ResearchWork(BaseRecord):
+    work_id: str
+    title: str
+    publication_date: str | None = None
+    work_type: str | None = None
+    cited_by_count: int | None = Field(default=None, ge=0)
+    authors: list[dict[str, str]] = Field(default_factory=list)
+    institutions: list[dict[str, str]] = Field(default_factory=list)
+    source_record_id: str
+
+
 class QualityResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     check_id: str

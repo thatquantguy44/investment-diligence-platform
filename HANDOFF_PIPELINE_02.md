@@ -15,6 +15,8 @@ Pipeline 01 is complete for the current pilot boundary. It provides the patterns
 
 Do not import QuantSmith code into this repository.
 
+The first Pipeline 02 slice is now implemented: `02_technology_talent` accepts an OpenAlex search query, captures the API response, normalizes research works with authors and institutions, validates source references and unique work IDs, and publishes to `diligence.research_works` plus `diligence.product_manifests`.
+
 ## Pipeline 02 scope from Spec 0001
 
 Purpose: compare company technology claims with patent, inventor, research, and institutional evidence.
@@ -35,9 +37,8 @@ Required outputs:
 
 ## Recommended implementation sequence
 
-1. Add `pipelines/02_technology_talent/manifest.yaml` with source domains, rate limits, terms review, outputs, and quality checks.
-2. Add source adapters under `src/diligence_pipelines/sources/` only for behavior needed by this pipeline; keep source-native payloads intact.
-3. Define source-specific Pydantic records plus a small canonical envelope. Preserve application, filing, publication, assignment, grant, and first-seen dates separately.
+1. Add source adapters under `src/diligence_pipelines/sources/` only for behavior needed by this pipeline; keep source-native payloads intact.
+2. Extend the source-specific Pydantic records. Preserve application, filing, publication, assignment, grant, and first-seen dates separately.
 4. Link patent assignees and inventors to Pipeline 01 entities through explicit match candidates and review states. Do not infer employment from coauthorship alone.
 5. Add deterministic formulas for time-windowed counts and topic observations. Patent counts are signals, not quality judgments.
 6. Add synthetic fixtures and HTTP replay tests before live calls.

@@ -1,3 +1,3 @@
-from .checks import validate_entities
+from .checks import validate_entities, validate_research_works
 
-__all__ = ["validate_entities"]
+__all__ = ["validate_entities", "validate_research_works"]

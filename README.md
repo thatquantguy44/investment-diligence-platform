@@ -80,3 +80,5 @@ These are defaults, not hard-coded requirements. Use `DILIGENCE_POSTGRES_DSN` fo
 See [docs/architecture.md](docs/architecture.md), [docs/data-contracts.md](docs/data-contracts.md), and [pipelines/01_entity_graph/README.md](pipelines/01_entity_graph/README.md).
 
 For a complete implementation handoff, see [MASTER_HANDOFF.md](MASTER_HANDOFF.md).
+
+Pipeline 02 now has an initial OpenAlex research-work slice. See [pipelines/02_technology_talent/README.md](pipelines/02_technology_talent/README.md).

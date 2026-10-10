@@ -9,9 +9,9 @@ from pathlib import Path
 import yaml
 
 from diligence_pipelines.contracts import Entity
-from diligence_pipelines.quality import validate_entities
+from diligence_pipelines.quality import validate_entities, validate_research_works
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_sec_submissions, normalize_gleif_alias, normalize_sec_entity
+from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_openalex_works, fetch_sec_submissions, normalize_gleif_alias, normalize_openalex_works, normalize_sec_entity
 from diligence_pipelines.storage import build_storage
 
 
@@ -143,6 +143,36 @@ def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> in
     return 0
 
 
+def run_technology_talent(query: str, max_results: int, settings: Settings) -> int:
+    run_id = str(uuid.uuid4())
+    storage = build_storage(settings)
+    capture = fetch_openalex_works(query, max_results=max_results)
+    raw_uri = storage.write_raw(capture)
+    source_record_id = f"source:{capture.content_sha256}"
+    records = normalize_openalex_works(capture.payload, run_id, source_record_id)
+    quality = validate_research_works(records)
+    failed = [result for result in quality if result.status == "fail"]
+    if failed:
+        print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))
+        return 2
+    product = {
+        "product_id": "technology_talent_research_works",
+        "contract_version": "1.0.0",
+        "materialization_id": run_id,
+        "pipeline_id": "02_technology_talent",
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "partition_keys": {"source_id": "openalex", "query": query, "max_results": max_results},
+        "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": source_record_id},
+        "location": "storage://curated/02_technology_talent/" + run_id + "/research_works",
+        "quality": [item.model_dump(mode="json") for item in quality],
+        "record_counts": {"research_works": len(records)},
+        "limitations": ["OpenAlex is research metadata, not a complete talent or patent database.", "Search results are not evidence of employment or company ownership."],
+    }
+    storage.publish_research_product(run_id, records, product)
+    print(json.dumps({"run_id": run_id, "status": "published", "research_work_count": len(records), "materialization_id": run_id}, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="diligence-pipelines")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -152,11 +182,17 @@ def main() -> int:
     run_parser.add_argument("--input", type=Path)
     run_parser.add_argument("--cik", help="Fetch one SEC EDGAR company-submissions record")
     run_parser.add_argument("--watchlist", type=Path, help="YAML watchlist with entities containing cik and optional lei")
+    run_parser.add_argument("--query", help="OpenAlex search query for Pipeline 02")
+    run_parser.add_argument("--max-results", type=int, default=25)
     args = parser.parse_args()
     if args.command == "validate-manifests":
         return validate_manifests()
+    if args.pipeline_id == "02_technology_talent":
+        if not args.query or args.input or args.cik or args.watchlist:
+            parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
+        return run_technology_talent(args.query, args.max_results, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
-        parser.error("Only 01_entity_graph is implemented in the initial buildout")
+        parser.error("Implemented pipelines are 01_entity_graph and 02_technology_talent")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:
         parser.error("Provide exactly one of --input, --cik, or --watchlist")
     settings = Settings.from_env()
