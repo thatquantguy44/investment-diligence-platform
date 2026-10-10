@@ -19,3 +19,9 @@ SEC_USER_AGENT: "investment-diligence-pipelines/0.1 you@example.com"
 
 # Required for live patent collection; leave blank for fixture-only tests.
 USPTO_API_KEY: ""
+# Configurable while the legacy PatentsView search API is unavailable.
+USPTO_API_URL: "https://search.patentsview.org/api/v1/patent/"
+# Optional local path or ODP download target for the bulk-data ingestion phase.
+USPTO_BULK_DATA_URL: ""
+# Current ODP catalog endpoint; use only with an ODP-compatible USPTO API key.
+USPTO_ODP_CATALOG_URL: "https://api.uspto.gov/api/v1/datasets/products/search"

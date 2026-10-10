@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import ssl
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import certifi
@@ -12,7 +13,7 @@ from diligence_pipelines.sources.base import RawCapture, SourceRequest
 PATENTSVIEW_PATENTS_URL = "https://search.patentsview.org/api/v1/patent/"
 
 
-def fetch_patents(query: str, api_key: str, max_results: int = 25) -> RawCapture:
+def fetch_patents(query: str, api_key: str, max_results: int = 25, api_url: str = PATENTSVIEW_PATENTS_URL) -> RawCapture:
     if not api_key:
         raise ValueError("USPTO_API_KEY is required for live patent collection")
     if not query.strip():
@@ -28,15 +29,27 @@ def fetch_patents(query: str, api_key: str, max_results: int = 25) -> RawCapture
         ],
         "o": {"size": max_results},
     }
-    uri = PATENTSVIEW_PATENTS_URL
+    uri = api_url.rstrip("/") + "/"
     request = Request(uri, data=json.dumps(body).encode(), method="POST", headers={
         "X-Api-Key": api_key, "Accept": "application/json", "Content-Type": "application/json",
         "User-Agent": "investment-diligence-pipelines/0.1",
     })
     context = ssl.create_default_context(cafile=certifi.where())
-    with urlopen(request, timeout=30, context=context) as response:
-        payload = response.read()
-        status = getattr(response, "status", None)
+    try:
+        with urlopen(request, timeout=30, context=context) as response:
+            payload = response.read()
+            status = getattr(response, "status", None)
+    except HTTPError as exc:
+        raise RuntimeError(
+            f"USPTO patent endpoint returned HTTP {exc.code}: {uri}. "
+            "Verify USPTO_API_URL and that the API key is valid for that endpoint."
+        ) from exc
+    except URLError as exc:
+        raise RuntimeError(
+            f"Unable to reach USPTO patent endpoint {uri}: {exc.reason}. "
+            "The legacy PatentsView search API was paused during the 2026 USPTO Open Data Portal migration. "
+            "Use --patent-fixture for offline tests or set USPTO_API_URL to a supported replacement endpoint."
+        ) from exc
     return RawCapture(request=SourceRequest("uspto_patents", uri, {"query": query, "max_results": str(max_results)}), payload=payload, status_code=status or 200, adapter_version="patentsview-patent-1.0.0")
 
 

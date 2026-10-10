@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import csv
+import io
+import json
+import zipfile
+from pathlib import Path
+from urllib.parse import urlparse
+
+from diligence_pipelines.sources.base import RawCapture, SourceRequest
+
+
+def _records_from_bytes(payload: bytes, name: str) -> list[dict]:
+    """Read the common ODP export shapes without assuming one file format."""
+    suffix = Path(name).suffix.lower()
+    if suffix == ".zip" or payload[:2] == b"PK":
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            members = [member for member in archive.namelist() if not member.endswith("/")]
+            if not members:
+                return []
+            member = next((item for item in members if Path(item).suffix.lower() in {".json", ".jsonl", ".csv"}), members[0])
+            return _records_from_bytes(archive.read(member), member)
+
+    text = payload.decode("utf-8-sig")
+    if suffix == ".csv" or ("\n" in text and "," in text.splitlines()[0] and not text.lstrip().startswith(("{", "["))):
+        return list(csv.DictReader(io.StringIO(text)))
+
+    if suffix in {".jsonl", ".ndjson"}:
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+    parsed = json.loads(text)
+    if isinstance(parsed, list):
+        return [item for item in parsed if isinstance(item, dict)]
+    if isinstance(parsed, dict):
+        for key in ("patents", "data", "results", "records"):
+            if isinstance(parsed.get(key), list):
+                return [item for item in parsed[key] if isinstance(item, dict)]
+        return [parsed]
+    raise ValueError(f"Unsupported USPTO bulk payload: {name}")
+
+
+def _first(row: dict, *keys: str) -> object:
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _to_patent(row: dict) -> dict | None:
+    patent_id = _first(row, "patent_id", "patent_number", "publication_number", "document_number")
+    title = _first(row, "patent_title", "title", "invention_title")
+    if patent_id in (None, "") or title in (None, ""):
+        return None
+    patent = {
+        "patent_id": str(patent_id),
+        "patent_title": str(title),
+        "patent_date": _first(row, "patent_date", "grant_date", "publication_date", "filing_date"),
+        "patent_type": _first(row, "patent_type", "document_type"),
+    }
+    abstract = _first(row, "patent_abstract", "abstract")
+    if abstract:
+        patent["patent_abstract"] = str(abstract)
+    assignee = _first(row, "assignee_organization", "assignee_name", "applicant_name")
+    if assignee:
+        patent["assignees"] = [{"assignee_organization": str(assignee), "assignee_id": row.get("assignee_id")}]
+    return patent
+
+
+def fetch_patents_from_bulk_file(path: Path, query: str, max_results: int = 25) -> RawCapture:
+    if not query.strip():
+        raise ValueError("Patent query must not be empty")
+    if not 1 <= max_results <= 1000:
+        raise ValueError("max_results must be between 1 and 1000")
+    source_payload = path.read_bytes()
+    needle = query.casefold()
+    matches = []
+    for row in _records_from_bytes(source_payload, path.name):
+        patent = _to_patent(row)
+        if patent is None:
+            continue
+        haystack = " ".join(str(patent.get(key, "")) for key in ("patent_title", "patent_abstract"))
+        if needle in haystack.casefold():
+            matches.append(patent)
+        if len(matches) >= max_results:
+            break
+    payload = json.dumps({"patents": matches}, separators=(",", ":")).encode()
+    return RawCapture(
+        request=SourceRequest(
+            "uspto_patents_bulk",
+            path.resolve().as_uri(),
+            {"query": query, "max_results": str(max_results), "source_format": path.suffix.lower().lstrip(".")},
+        ),
+        payload=payload,
+        status_code=200,
+        adapter_version="uspto-odp-bulk-search-1.0.0",
+    )

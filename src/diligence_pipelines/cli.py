@@ -11,7 +11,7 @@ import yaml
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.quality import validate_entities, validate_research_works
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_sec_submissions, normalize_gleif_alias, normalize_openalex_works, normalize_patents, normalize_sec_entity
+from diligence_pipelines.sources import RawCapture, SourceRequest, download_bulk_artifact, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, normalize_gleif_alias, normalize_openalex_works, normalize_patents, normalize_sec_entity, search_odp_products
 from diligence_pipelines.storage import build_storage
 from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
 
@@ -35,6 +35,25 @@ def validate_manifests() -> int:
             if not source.get("source_id") or not source.get("allowed_domains"):
                 raise SystemExit(f"{path}: source requires source_id and allowed_domains")
     print(f"validated {len(manifests)} manifest(s)")
+    return 0
+
+
+def download_uspto_bulk(url: str, output: Path, settings: Settings) -> int:
+    artifact = download_bulk_artifact(url, output, api_key=settings.uspto_api_key)
+    print(json.dumps({"status": "downloaded", **artifact.__dict__}, indent=2))
+    return 0
+
+
+def search_uspto_odp(query: str, output: Path | None, settings: Settings) -> int:
+    if not settings.uspto_api_key:
+        raise SystemExit("USPTO_API_KEY is required for ODP catalog access")
+    payload = search_odp_products(query, settings.uspto_api_key, settings.uspto_odp_catalog_url)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(payload)
+        print(json.dumps({"status": "saved", "output": str(output), "bytes": len(payload)}, indent=2))
+    else:
+        print(payload.decode("utf-8"))
     return 0
 
 
@@ -144,7 +163,7 @@ def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> in
     return 0
 
 
-def run_technology_talent(query: str, max_results: int, patent_fixture: Path | None, settings: Settings) -> int:
+def run_technology_talent(query: str, max_results: int, patent_fixture: Path | None, patent_bulk_file: Path | None, settings: Settings) -> int:
     run_id = str(uuid.uuid4())
     storage = build_storage(settings)
     capture = fetch_openalex_works(query, max_results=max_results)
@@ -152,13 +171,17 @@ def run_technology_talent(query: str, max_results: int, patent_fixture: Path | N
     source_record_id = f"source:{capture.content_sha256}"
     records = normalize_openalex_works(capture.payload, run_id, source_record_id)
     institution_edges = derive_institution_edges(records, run_id)
+    if patent_fixture and patent_bulk_file:
+        raise SystemExit("Use only one of --patent-fixture or --patent-bulk-file")
     if patent_fixture:
         patent_payload = patent_fixture.read_bytes()
         patent_capture = RawCapture(SourceRequest("uspto_patents_fixture", patent_fixture.resolve().as_uri()), patent_payload, status_code=200, adapter_version="patent-fixture-1.0.0")
+    elif patent_bulk_file:
+        patent_capture = fetch_patents_from_bulk_file(patent_bulk_file, query, max_results=max_results)
     else:
         if not settings.uspto_api_key:
             raise SystemExit("USPTO_API_KEY is required for live patent collection; use --patent-fixture for offline tests")
-        patent_capture = fetch_patents(query, settings.uspto_api_key, max_results=max_results)
+        patent_capture = fetch_patents(query, settings.uspto_api_key, max_results=max_results, api_url=settings.uspto_api_url)
     patent_uri = storage.write_raw(patent_capture)
     patent_source_record_id = f"source:{patent_capture.content_sha256}"
     patent_records, assignments, inventor_edges = normalize_patents(patent_capture.payload, run_id, patent_source_record_id)
@@ -190,6 +213,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="diligence-pipelines")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate-manifests")
+    download_parser = subparsers.add_parser("download-uspto-bulk")
+    download_parser.add_argument("--url", required=True, help="Official USPTO ODP artifact URL")
+    download_parser.add_argument("--output", type=Path, required=True, help="Local artifact path")
+    catalog_parser = subparsers.add_parser("search-uspto-odp")
+    catalog_parser.add_argument("--query", required=True, help="ODP product title query")
+    catalog_parser.add_argument("--output", type=Path, help="Optional JSON output path")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("pipeline_id")
     run_parser.add_argument("--input", type=Path)
@@ -198,13 +227,18 @@ def main() -> int:
     run_parser.add_argument("--query", help="OpenAlex search query for Pipeline 02")
     run_parser.add_argument("--max-results", type=int, default=25)
     run_parser.add_argument("--patent-fixture", type=Path, help="Synthetic USPTO response for offline Pipeline 02 tests")
+    run_parser.add_argument("--patent-bulk-file", type=Path, help="Downloaded USPTO ODP bulk file (JSON, JSONL, CSV, or ZIP) to search locally")
     args = parser.parse_args()
     if args.command == "validate-manifests":
         return validate_manifests()
+    if args.command == "download-uspto-bulk":
+        return download_uspto_bulk(args.url, args.output, Settings.from_env())
+    if args.command == "search-uspto-odp":
+        return search_uspto_odp(args.query, args.output, Settings.from_env())
     if args.pipeline_id == "02_technology_talent":
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
-        return run_technology_talent(args.query, args.max_results, args.patent_fixture, Settings.from_env())
+        return run_technology_talent(args.query, args.max_results, args.patent_fixture, args.patent_bulk_file, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
         parser.error("Implemented pipelines are 01_entity_graph and 02_technology_talent")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:
