@@ -35,7 +35,9 @@ class LocalStorage:
         destination.write_text("".join(json.dumps(record, default=str) + "\n" for record in records))
         return destination
 
-    def publish_entity_product(self, run_id: str, entities: list[dict], product: dict) -> str:
+    def publish_entity_product(self, run_id: str, entities: list[dict], product: dict, aliases: list[dict] | None = None, match_candidates: list[dict] | None = None) -> str:
         output = self.write_jsonl(f"curated/01_entity_graph/{run_id}/entities.jsonl", entities)
+        self.write_jsonl(f"curated/01_entity_graph/{run_id}/entity_aliases.jsonl", aliases or [])
+        self.write_jsonl(f"curated/01_entity_graph/{run_id}/unresolved_match_candidates.jsonl", match_candidates or [])
         self.write_jsonl(f"curated/01_entity_graph/{run_id}/product_manifest.jsonl", [product])
         return str(output)

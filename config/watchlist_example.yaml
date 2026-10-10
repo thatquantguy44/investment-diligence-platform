@@ -1,0 +1,6 @@
+# Copy and edit this file for a bounded Pipeline 01 run.
+# CIK is required. LEI is optional and triggers a GLEIF capture plus an exact-LEI alias.
+entities:
+  - cik: "320193"
+  - cik: "789019"
+  - cik: "1652044"

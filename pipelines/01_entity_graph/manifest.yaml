@@ -1,6 +1,6 @@
 pipeline_id: 01_entity_graph
 title: Company and ownership graph
-status: prototype
+status: pilot
 owner: quantitative-diligence-data-engineering
 purpose: Canonicalize companies and related entities
 sources:
@@ -19,4 +19,4 @@ schedule: manual
 partition_by: [source_id, retrieval_date]
 sensitivity: public
 model_use: none
-quality_checks: [schema_valid, identifier_unique, source_ref_present]
+quality_checks: [schema_valid, identifier_unique, source_ref_present, watchlist_deduplicated, raw_capture_present]

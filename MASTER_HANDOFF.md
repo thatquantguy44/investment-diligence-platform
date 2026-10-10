@@ -14,7 +14,7 @@ Pipeline `01_entity_graph` has a lightweight real path:
 4. Run schema, identifier, and source-reference quality gates.
 5. Publish an entity record and product manifest to local storage or PostgreSQL.
 
-The local fixture path remains the deterministic test path. GLEIF, SEC XBRL facts, ownership links, and the remaining domain pipelines are not implemented yet.
+The local fixture path remains the deterministic test path. SEC XBRL facts and ownership relationships are not implemented yet; those are follow-on enhancements to Pipeline 01.
 
 ## PostgreSQL target and configurability
 
@@ -90,14 +90,13 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 
 ## Recommended next work
 
-1. Add integration tests for SEC HTTP responses using a synthetic fixture and retry/error cases.
-2. Verify connectivity and credentials against the local `IDP` database; add PostgreSQL integration tests behind an explicit environment flag.
-3. Add `source_records` as a normalized relational table if downstream consumers need SQL joins over raw metadata.
-4. Implement GLEIF as the second Pipeline 01 source and add reviewed match candidates between SEC and GLEIF identifiers.
-5. Add a consumer adapter that reads product manifests by `product_id`, `contract_version`, and `materialization_id`.
-6. Add migrations before the PostgreSQL schema is used outside local development.
-7. Build Pipelines 02–05 only after the shared capture, product, and quality patterns have been exercised by Pipeline 01.
+1. Add SEC retry/backoff tests, HTTP error fixtures, and a reviewed source-policy record.
+2. Add SEC XBRL facts and ownership relationships if Pipeline 01 needs deeper graph coverage.
+3. Add a normalized `source_records` table if downstream consumers need SQL joins over raw metadata.
+4. Add a consumer adapter that reads product manifests by `product_id`, `contract_version`, and `materialization_id`.
+5. Add migrations before the PostgreSQL schema is used outside local development.
+6. Continue with Pipeline 02 using the handoff in `HANDOFF_PIPELINE_02.md`.
 
 ## Current validation result
 
-The repository’s local test suite passes with six tests. Manifest validation passes. The real SEC request path is implemented but should be exercised from a network-enabled environment with a valid identifying `SEC_USER_AGENT` before treating it as operationally active.
+The repository’s local test suite passes with nine tests. Manifest validation passes. The three-company live SEC watchlist smoke test published successfully to PostgreSQL `IDP`.

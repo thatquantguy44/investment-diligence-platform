@@ -4,7 +4,7 @@ Modular, source-backed data pipelines for investment diligence. The repository o
 
 ## Status
 
-The foundation and a lightweight real Pipeline 01 are in place. Pipeline 01 can fetch one public SEC EDGAR company-submissions record, preserve the raw response, normalize a company entity, run quality checks, and publish a versioned product manifest. Local fixture replay remains available for deterministic tests.
+The foundation and Pipeline 01 pilot are in place. Pipeline 01 can fetch a bounded SEC EDGAR watchlist, optionally enrich entries with GLEIF LEI records, preserve raw responses, normalize entities and aliases, run quality checks, and publish versioned product manifests. Local fixture replay remains available for deterministic tests.
 
 ## Quick start
 
@@ -28,6 +28,15 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 ```
 
 The example uses Apple’s SEC CIK. Replace `320193` with another public-company CIK. The run is bounded to one SEC submissions document; it does not crawl filings or bypass access controls.
+
+For a bounded batch run, copy and edit [`config/watchlist_example.yaml`](config/watchlist_example.yaml):
+
+```bash
+SEC_USER_AGENT='investment-diligence-pipelines/0.1 you@example.com' \
+python -m diligence_pipelines.cli run 01_entity_graph --watchlist config/watchlist_example.yaml
+```
+
+Each watchlist entry requires a CIK and may include a 20-character LEI. An LEI triggers a GLEIF capture and an exact-identifier alias; name similarity alone remains unreviewed.
 
 Runtime data is written under `.data/` by default and is excluded from Git. Set `DILIGENCE_DATA_ROOT` to use another local root.
 

@@ -56,6 +56,24 @@ class PostgresStorage:
                     created_at timestamptz NOT NULL DEFAULT now()
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.entity_aliases (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    entity_id text NOT NULL,
+                    record jsonb NOT NULL,
+                    PRIMARY KEY (record_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.match_candidates (
+                    candidate_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    candidate_entity_id text NOT NULL,
+                    record jsonb NOT NULL,
+                    PRIMARY KEY (candidate_id, run_id)
+                )
+            """)
         connection.commit()
 
     def write_raw(self, capture: RawCapture) -> str:
@@ -72,7 +90,7 @@ class PostgresStorage:
         connection.commit()
         return f"postgresql://diligence/raw_captures/{capture.content_sha256}"
 
-    def publish_entity_product(self, run_id: str, entities: list[dict[str, Any]], product: dict[str, Any]) -> str:
+    def publish_entity_product(self, run_id: str, entities: list[dict[str, Any]], product: dict[str, Any], aliases: list[dict[str, Any]] | None = None, match_candidates: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
         with connection.cursor() as cursor:
             for entity in entities:
@@ -81,6 +99,18 @@ class PostgresStorage:
                     VALUES (%s, %s, %s)
                     ON CONFLICT (entity_id, run_id) DO UPDATE SET record = EXCLUDED.record
                 """, (entity["entity_id"], run_id, json.dumps(entity, default=str)))
+            for alias in aliases or []:
+                cursor.execute("""
+                    INSERT INTO diligence.entity_aliases (record_id, run_id, entity_id, record)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (record_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (alias["record_id"], run_id, alias["entity_id"], json.dumps(alias, default=str)))
+            for candidate in match_candidates or []:
+                cursor.execute("""
+                    INSERT INTO diligence.match_candidates (candidate_id, run_id, candidate_entity_id, record)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (candidate_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (candidate["candidate_id"], run_id, candidate["candidate_entity_id"], json.dumps(candidate, default=str)))
             cursor.execute("""
                 INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
                 VALUES (%s, %s, %s, %s)

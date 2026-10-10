@@ -65,6 +65,16 @@ class EntityAlias(BaseRecord):
     review_status: Literal["unreviewed", "accepted", "rejected"] = "unreviewed"
 
 
+class MatchCandidateRecord(BaseRecord):
+    candidate_id: str
+    query: str
+    candidate_entity_id: str
+    match_method: str
+    match_score: float = Field(ge=0, le=1)
+    candidate_evidence: list[EvidenceRef] = Field(default_factory=list)
+    review_status: Literal["unreviewed", "accepted", "rejected"] = "unreviewed"
+
+
 class QualityResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     check_id: str

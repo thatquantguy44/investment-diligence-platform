@@ -11,7 +11,7 @@ import yaml
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.quality import validate_entities
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_sec_submissions, normalize_sec_entity
+from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_sec_submissions, normalize_gleif_alias, normalize_sec_entity
 from diligence_pipelines.storage import build_storage
 
 
@@ -79,30 +79,67 @@ def run_entity_graph(input_path: Path, settings: Settings) -> int:
 
 
 def run_sec_entity_graph(cik: str, settings: Settings) -> int:
+    return run_sec_watchlist([{"cik": cik}], settings)
+
+
+def load_watchlist(path: Path) -> list[dict[str, str]]:
+    data = yaml.safe_load(path.read_text()) or {}
+    entries = data.get("entities", data) if isinstance(data, dict) else data
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Watchlist must contain a non-empty 'entities' list")
+    normalized = []
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("cik"):
+            raise ValueError("Each watchlist entry requires a cik")
+        cik = str(entry["cik"])
+        if cik in seen:
+            continue
+        seen.add(cik)
+        normalized.append({key: str(value) for key, value in entry.items() if value is not None})
+    return normalized
+
+
+def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> int:
     run_id = str(uuid.uuid4())
     storage = build_storage(settings)
-    capture = fetch_sec_submissions(cik, settings.sec_user_agent)
-    raw_uri = storage.write_raw(capture)
-    entity = Entity(**normalize_sec_entity(capture.payload, run_id), created_at=capture.retrieved_at, first_seen_at=capture.retrieved_at)
-    quality = validate_entities([entity])
+    entities = []
+    aliases = []
+    raw_uris = []
+    hashes = []
+    for entry in watchlist:
+        capture = fetch_sec_submissions(entry["cik"], settings.sec_user_agent)
+        raw_uris.append(storage.write_raw(capture))
+        hashes.append(capture.content_sha256)
+        entity = Entity(**normalize_sec_entity(capture.payload, run_id), created_at=capture.retrieved_at, first_seen_at=capture.retrieved_at)
+        if entry.get("lei"):
+            gleif_capture = fetch_gleif_lei(entry["lei"])
+            raw_uris.append(storage.write_raw(gleif_capture))
+            hashes.append(gleif_capture.content_sha256)
+            alias = normalize_gleif_alias(gleif_capture.payload, run_id, entity.entity_id)
+            aliases.append(alias)
+            entity.identifiers.append({"scheme": "lei", "value": alias["lei"]})
+        entities.append(entity)
+    quality = validate_entities(entities)
     failed = [result for result in quality if result.status == "fail"]
     if failed:
         print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))
         return 2
-    entity_dict = entity.model_dump(mode="json")
+    entity_dicts = [entity.model_dump(mode="json") for entity in entities]
     product = {
         "product_id": "entity_graph",
         "contract_version": "1.0.0",
         "materialization_id": run_id,
         "pipeline_id": "01_entity_graph",
-        "as_of": capture.retrieved_at.isoformat(),
-        "partition_keys": {"source_id": "sec_edgar", "cik": entity.identifiers[0]["value"]},
-        "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256},
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "partition_keys": {"source_id": "sec_edgar", "watchlist_size": len(watchlist)},
+        "lineage": {"raw_object_uris": raw_uris, "content_sha256": hashes},
         "location": "storage://curated/01_entity_graph/" + run_id + "/entities",
         "quality": [item.model_dump(mode="json") for item in quality],
+        "record_counts": {"entities": len(entity_dicts), "entity_aliases": len(aliases), "unresolved_match_candidates": 0},
     }
-    storage.publish_entity_product(run_id, [entity_dict], product)
-    print(json.dumps({"run_id": run_id, "status": "published", "entity_count": 1, "materialization_id": run_id, "entity": entity_dict}, indent=2))
+    storage.publish_entity_product(run_id, entity_dicts, product, aliases=aliases)
+    print(json.dumps({"run_id": run_id, "status": "published", "entity_count": len(entity_dicts), "alias_count": len(aliases), "materialization_id": run_id}, indent=2))
     return 0
 
 
@@ -114,15 +151,20 @@ def main() -> int:
     run_parser.add_argument("pipeline_id")
     run_parser.add_argument("--input", type=Path)
     run_parser.add_argument("--cik", help="Fetch one SEC EDGAR company-submissions record")
+    run_parser.add_argument("--watchlist", type=Path, help="YAML watchlist with entities containing cik and optional lei")
     args = parser.parse_args()
     if args.command == "validate-manifests":
         return validate_manifests()
     if args.pipeline_id != "01_entity_graph":
         parser.error("Only 01_entity_graph is implemented in the initial buildout")
-    if bool(args.input) == bool(args.cik):
-        parser.error("Provide exactly one of --input or --cik")
+    if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:
+        parser.error("Provide exactly one of --input, --cik, or --watchlist")
     settings = Settings.from_env()
-    return run_entity_graph(args.input, settings) if args.input else run_sec_entity_graph(args.cik, settings)
+    if args.input:
+        return run_entity_graph(args.input, settings)
+    if args.cik:
+        return run_sec_entity_graph(args.cik, settings)
+    return run_sec_watchlist(load_watchlist(args.watchlist), settings)
 
 
 if __name__ == "__main__":
