@@ -28,7 +28,7 @@ Replace the retired PatentsView query dependency with a reproducible local paten
 2. **Implemented:** streamed artifact downloader with ODP API-key header support and a SHA-256 JSON sidecar.
 3. **Implemented:** ODP product-catalog search command using an ODP API key.
 4. **Implemented:** deterministic catalog selection command that requires exactly one matching release/file.
-5. **Next:** streaming ingestion into a durable patent index with PostgreSQL full-text search or a bounded local index.
+5. **Implemented:** schema-validated bulk indexing with PostgreSQL `diligence.patent_index` and a local replay index.
 6. **Next:** incremental refresh, checksum-based deduplication, schema-drift checks, and coverage metrics.
 
 ## Test command
@@ -51,6 +51,15 @@ PYTHONPATH=src python -m diligence_pipelines.cli download-uspto-bulk \
 ```
 
 The command writes `.data/uspto/patents.jsonl.json` with the source URL, retrieval time, byte count, HTTP status, and SHA-256 checksum.
+
+Index the downloaded artifact into the configured backend:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli index-uspto-bulk \
+  --file .data/uspto/patents.jsonl
+```
+
+PostgreSQL creates `diligence.patent_index` with a simple-language GIN search index and `diligence.patent_index_runs` for source checksums and ingestion metadata.
 
 Search the ODP product catalog:
 

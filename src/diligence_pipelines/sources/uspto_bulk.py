@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import zipfile
@@ -95,3 +96,34 @@ def fetch_patents_from_bulk_file(path: Path, query: str, max_results: int = 25) 
         status_code=200,
         adapter_version="uspto-odp-bulk-search-1.0.0",
     )
+
+
+def load_bulk_patent_index(path: Path) -> tuple[list[dict], dict]:
+    """Validate and normalize a bulk artifact for durable local/Postgres indexing."""
+    payload = path.read_bytes()
+    records = []
+    skipped = 0
+    for row in _records_from_bytes(payload, path.name):
+        patent = _to_patent(row)
+        if patent is None:
+            skipped += 1
+            continue
+        records.append({
+            "record_id": f"patent_index:{patent['patent_id']}",
+            "schema_version": "1.0.0",
+            "source_id": "uspto_patents_bulk",
+            "patent_id": patent["patent_id"],
+            "title": patent["patent_title"],
+            "abstract": patent.get("patent_abstract"),
+            "patent_date": patent.get("patent_date"),
+            "patent_type": patent.get("patent_type"),
+            "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
+        })
+    metadata = {
+        "source_path": str(path),
+        "source_file_sha256": hashlib.sha256(payload).hexdigest(),
+        "record_count": len(records),
+        "skipped_count": skipped,
+        "adapter_version": "uspto-odp-index-1.0.0",
+    }
+    return records, metadata

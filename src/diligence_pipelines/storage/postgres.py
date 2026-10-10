@@ -125,6 +125,24 @@ class PostgresStorage:
                     PRIMARY KEY (record_id, run_id)
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.patent_index (
+                    patent_id text PRIMARY KEY,
+                    source_file_sha256 text NOT NULL,
+                    record jsonb NOT NULL,
+                    search_text text NOT NULL,
+                    ingested_at timestamptz NOT NULL DEFAULT now()
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS patent_index_search_idx ON diligence.patent_index USING gin (to_tsvector('simple', search_text))")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.patent_index_runs (
+                    source_file_sha256 text PRIMARY KEY,
+                    source_path text NOT NULL,
+                    metadata jsonb NOT NULL,
+                    ingested_at timestamptz NOT NULL DEFAULT now()
+                )
+            """)
         connection.commit()
 
     def write_raw(self, capture: RawCapture) -> str:
@@ -174,6 +192,28 @@ class PostgresStorage:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
+
+    def upsert_patent_index(self, records: list[dict[str, Any]], metadata: dict[str, Any]) -> int:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for record in records:
+                search_text = " ".join(str(record.get(field) or "") for field in ("title", "abstract", "assignee_name"))
+                cursor.execute("""
+                    INSERT INTO diligence.patent_index (patent_id, source_file_sha256, record, search_text)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (patent_id) DO UPDATE SET
+                        source_file_sha256 = EXCLUDED.source_file_sha256,
+                        record = EXCLUDED.record,
+                        search_text = EXCLUDED.search_text,
+                        ingested_at = now()
+                """, (record["patent_id"], metadata["source_file_sha256"], json.dumps(record, default=str), search_text))
+            cursor.execute("""
+                INSERT INTO diligence.patent_index_runs (source_file_sha256, source_path, metadata)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (source_file_sha256) DO UPDATE SET metadata = EXCLUDED.metadata, ingested_at = now()
+            """, (metadata["source_file_sha256"], metadata["source_path"], json.dumps(metadata, default=str)))
+        connection.commit()
+        return len(records)
 
     def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], observations: list[dict[str, Any]] | None = None, patent_records: list[dict[str, Any]] | None = None, assignments: list[dict[str, Any]] | None = None, inventor_edges: list[dict[str, Any]] | None = None, institution_edges: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
