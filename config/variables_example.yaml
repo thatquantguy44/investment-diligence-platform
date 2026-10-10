@@ -1,0 +1,18 @@
+# Copy this file to config/variables.yaml and fill in local values.
+# config/variables.yaml is ignored by Git. Do not put real passwords or API keys here.
+
+DILIGENCE_ENV: local
+DILIGENCE_STORAGE_BACKEND: local
+DILIGENCE_DATA_ROOT: .data
+
+# PostgreSQL defaults are aligned with the local macro_medallion convention.
+DILIGENCE_POSTGRES_HOST: localhost
+DILIGENCE_POSTGRES_PORT: 55432
+DILIGENCE_POSTGRES_DB: IDP
+DILIGENCE_POSTGRES_USER: postgres
+DILIGENCE_POSTGRES_PASSWORD: ""
+# Optional full connection string; leave blank to use the fields above.
+DILIGENCE_POSTGRES_DSN: ""
+
+# SEC requires an identifying User-Agent. Use an email address you control.
+SEC_USER_AGENT: "investment-diligence-pipelines/0.1 you@example.com"

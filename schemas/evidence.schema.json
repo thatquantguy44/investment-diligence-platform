@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/diligence/evidence.schema.json",
+  "title": "EvidenceRef",
+  "type": "object",
+  "required": ["source_record_id", "locator", "content_sha256"],
+  "properties": {
+    "source_record_id": {"type": "string"},
+    "locator": {"type": "string"},
+    "quote_or_excerpt": {"type": ["string", "null"]},
+    "content_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "additionalProperties": false
+}

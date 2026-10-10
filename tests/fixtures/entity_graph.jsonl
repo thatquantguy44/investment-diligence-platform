@@ -1,0 +1,2 @@
+{"entity_id":"entity:acme","entity_type":"organization","canonical_name":"Acme Robotics Pte. Ltd.","jurisdiction":"SG","identifiers":[{"scheme":"synthetic","value":"ACME-001"}],"entity_status":"active"}
+{"entity_id":"entity:delta","entity_type":"organization","canonical_name":"Delta Materials Co., Ltd.","jurisdiction":"CN","identifiers":[{"scheme":"synthetic","value":"DELTA-001"}],"entity_status":"unknown"}

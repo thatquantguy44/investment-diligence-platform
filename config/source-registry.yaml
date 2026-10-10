@@ -1,0 +1,15 @@
+sources:
+  - source_id: sec_edgar
+    title: SEC EDGAR submissions and XBRL facts
+    method: api
+    allowed_domains: [data.sec.gov, www.sec.gov]
+    terms_reviewed: false
+    max_requests_per_minute: 8
+    retention: metadata_and_permitted_payload
+  - source_id: gleif
+    title: GLEIF LEI records
+    method: api
+    allowed_domains: [api.gleif.org, www.gleif.org]
+    terms_reviewed: false
+    max_requests_per_minute: 30
+    retention: metadata_and_permitted_payload

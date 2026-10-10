@@ -1,0 +1,5 @@
+environment: local
+data_root: .data
+entity_match:
+  auto_confirm_threshold: 0.98
+  candidate_threshold: 0.70
