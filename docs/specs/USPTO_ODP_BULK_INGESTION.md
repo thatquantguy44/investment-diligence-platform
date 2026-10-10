@@ -27,7 +27,7 @@ Replace the retired PatentsView query dependency with a reproducible local paten
 1. **Implemented:** local bulk-file adapter and deterministic query path.
 2. **Implemented:** streamed artifact downloader with ODP API-key header support and a SHA-256 JSON sidecar.
 3. **Implemented:** ODP product-catalog search command using an ODP API key.
-4. **Next:** resolve catalog results to a selected release/download URL and validate its schema.
+4. **Implemented:** deterministic catalog selection command that requires exactly one matching release/file.
 5. **Next:** streaming ingestion into a durable patent index with PostgreSQL full-text search or a bounded local index.
 6. **Next:** incremental refresh, checksum-based deduplication, schema-drift checks, and coverage metrics.
 
@@ -58,4 +58,13 @@ Search the ODP product catalog:
 PYTHONPATH=src python -m diligence_pipelines.cli search-uspto-odp \
   --query "PatentsView granted patent disambiguated" \
   --output .data/uspto/catalog.json
+```
+
+Select one release/file before downloading it:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli select-uspto-odp \
+  --catalog .data/uspto/catalog.json \
+  --contains "PatentsView granted patent disambiguated 2025-Q4" \
+  --output .data/uspto/selection.json
 ```

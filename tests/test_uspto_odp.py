@@ -30,3 +30,9 @@ def test_download_bulk_artifact_writes_checksum_sidecar(monkeypatch, tmp_path):
     sidecar = json.loads(Path(str(destination) + ".json").read_text())
     assert sidecar["content_sha256"] == artifact.content_sha256
     assert sidecar["size_bytes"] == 8
+
+
+def test_select_catalog_artifact_requires_one_matching_file():
+    payload = Path("tests/fixtures/odp_catalog.json").read_bytes()
+    selection = uspto_odp.select_catalog_artifact(payload, "2025-Q4")
+    assert selection["download_url"].endswith("patents-2025q4.jsonl")

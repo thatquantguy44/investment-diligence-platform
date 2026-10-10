@@ -14,6 +14,7 @@ import certifi
 
 
 DEFAULT_ODP_CATALOG_URL = "https://api.uspto.gov/api/v1/datasets/products/search"
+DOWNLOAD_KEYS = {"url", "downloadurl", "filedownloaduri", "downloaduri", "fileurl", "download_url", "file_download_uri"}
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,38 @@ class BulkArtifact:
     content_sha256: str
     size_bytes: int
     status_code: int
+
+
+def _walk_dicts(value: object, context: str = ""):
+    if isinstance(value, dict):
+        own_context = f"{context} {json.dumps({key: child for key, child in value.items() if not isinstance(child, (dict, list))}, sort_keys=True)}"
+        yield value, own_context
+        for child in value.values():
+            yield from _walk_dicts(child, own_context)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_dicts(child, context)
+
+
+def select_catalog_artifact(payload: bytes, contains: str) -> dict:
+    """Select one catalog item/file without guessing among unrelated releases."""
+    data = json.loads(payload)
+    needle = contains.casefold().strip()
+    candidates = []
+    for item, context in _walk_dicts(data):
+        urls = [str(value) for key, value in item.items() if key.casefold().replace("-", "_") in DOWNLOAD_KEYS and isinstance(value, str) and value.startswith(("https://", "http://"))]
+        if not urls:
+            continue
+        text = f"{context} {json.dumps(item, sort_keys=True)}".casefold()
+        if needle and needle not in text:
+            continue
+        for url in urls:
+            candidates.append({"source": item, "download_url": url})
+    if not candidates:
+        raise ValueError(f"No downloadable ODP catalog item matched: {contains}")
+    if len(candidates) > 1:
+        raise ValueError(f"ODP catalog match is ambiguous ({len(candidates)} files); narrow --contains")
+    return candidates[0]
 
 
 def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CATALOG_URL) -> bytes:
