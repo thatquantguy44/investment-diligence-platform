@@ -95,7 +95,7 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 3. Add a normalized `source_records` table if downstream consumers need SQL joins over raw metadata.
 4. Add a consumer adapter that reads product manifests by `product_id`, `contract_version`, and `materialization_id`.
 5. Add migrations before the PostgreSQL schema is used outside local development.
-6. Continue with Pipeline 02 using the handoff in `HANDOFF_PIPELINE_02.md`.
+6. Continue with Pipeline 02 using the handoff in [`HANDOFF_PIPELINE_02.md`](HANDOFF_PIPELINE_02.md).
 
 ## Current validation result
 

@@ -16,3 +16,6 @@ DILIGENCE_POSTGRES_DSN: ""
 
 # SEC requires an identifying User-Agent. Use an email address you control.
 SEC_USER_AGENT: "investment-diligence-pipelines/0.1 you@example.com"
+
+# Required for live patent collection; leave blank for fixture-only tests.
+USPTO_API_KEY: ""

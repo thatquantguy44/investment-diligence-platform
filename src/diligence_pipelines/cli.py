@@ -11,9 +11,9 @@ import yaml
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.quality import validate_entities, validate_research_works
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_openalex_works, fetch_sec_submissions, normalize_gleif_alias, normalize_openalex_works, normalize_sec_entity
+from diligence_pipelines.sources import RawCapture, SourceRequest, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_sec_submissions, normalize_gleif_alias, normalize_openalex_works, normalize_patents, normalize_sec_entity
 from diligence_pipelines.storage import build_storage
-from diligence_pipelines.technology import derive_topic_observation
+from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -144,13 +144,24 @@ def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> in
     return 0
 
 
-def run_technology_talent(query: str, max_results: int, settings: Settings) -> int:
+def run_technology_talent(query: str, max_results: int, patent_fixture: Path | None, settings: Settings) -> int:
     run_id = str(uuid.uuid4())
     storage = build_storage(settings)
     capture = fetch_openalex_works(query, max_results=max_results)
     raw_uri = storage.write_raw(capture)
     source_record_id = f"source:{capture.content_sha256}"
     records = normalize_openalex_works(capture.payload, run_id, source_record_id)
+    institution_edges = derive_institution_edges(records, run_id)
+    if patent_fixture:
+        patent_payload = patent_fixture.read_bytes()
+        patent_capture = RawCapture(SourceRequest("uspto_patents_fixture", patent_fixture.resolve().as_uri()), patent_payload, status_code=200, adapter_version="patent-fixture-1.0.0")
+    else:
+        if not settings.uspto_api_key:
+            raise SystemExit("USPTO_API_KEY is required for live patent collection; use --patent-fixture for offline tests")
+        patent_capture = fetch_patents(query, settings.uspto_api_key, max_results=max_results)
+    patent_uri = storage.write_raw(patent_capture)
+    patent_source_record_id = f"source:{patent_capture.content_sha256}"
+    patent_records, assignments, inventor_edges = normalize_patents(patent_capture.payload, run_id, patent_source_record_id)
     quality = validate_research_works(records)
     failed = [result for result in quality if result.status == "fail"]
     if failed:
@@ -164,14 +175,14 @@ def run_technology_talent(query: str, max_results: int, settings: Settings) -> i
         "pipeline_id": "02_technology_talent",
         "as_of": datetime.now(timezone.utc).isoformat(),
         "partition_keys": {"source_id": "openalex", "query": query, "max_results": max_results},
-        "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": source_record_id},
+        "lineage": {"raw_object_uris": [raw_uri, patent_uri], "content_sha256": [capture.content_sha256, patent_capture.content_sha256], "source_record_ids": [source_record_id, patent_source_record_id]},
         "location": "storage://curated/02_technology_talent/" + run_id + "/research_works",
         "quality": [item.model_dump(mode="json") for item in quality],
-        "record_counts": {"research_works": len(records), "technology_topic_observations": len(observations)},
-        "limitations": ["OpenAlex is research metadata, not a complete talent or patent database.", "Search results are not evidence of employment or company ownership."],
+        "record_counts": {"research_works": len(records), "technology_topic_observations": len(observations), "patent_records": len(patent_records), "patent_assignments": len(assignments), "inventor_edges": len(inventor_edges), "institution_edges": len(institution_edges)},
+        "limitations": ["OpenAlex and USPTO metadata are evidence sources, not evidence of employment, ownership, or technology quality.", "Inventor and institution relationships do not establish employment by a target company."],
     }
-    storage.publish_research_product(run_id, records, product, observations=observations)
-    print(json.dumps({"run_id": run_id, "status": "published", "research_work_count": len(records), "materialization_id": run_id}, indent=2))
+    storage.publish_research_product(run_id, records, product, observations=observations, patent_records=patent_records, assignments=assignments, inventor_edges=inventor_edges, institution_edges=institution_edges)
+    print(json.dumps({"run_id": run_id, "status": "published", "research_work_count": len(records), "patent_count": len(patent_records), "materialization_id": run_id}, indent=2))
     return 0
 
 
@@ -186,13 +197,14 @@ def main() -> int:
     run_parser.add_argument("--watchlist", type=Path, help="YAML watchlist with entities containing cik and optional lei")
     run_parser.add_argument("--query", help="OpenAlex search query for Pipeline 02")
     run_parser.add_argument("--max-results", type=int, default=25)
+    run_parser.add_argument("--patent-fixture", type=Path, help="Synthetic USPTO response for offline Pipeline 02 tests")
     args = parser.parse_args()
     if args.command == "validate-manifests":
         return validate_manifests()
     if args.pipeline_id == "02_technology_talent":
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
-        return run_technology_talent(args.query, args.max_results, Settings.from_env())
+        return run_technology_talent(args.query, args.max_results, args.patent_fixture, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
         parser.error("Implemented pipelines are 01_entity_graph and 02_technology_talent")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:

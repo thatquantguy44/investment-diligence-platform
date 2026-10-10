@@ -115,7 +115,6 @@ investment-diligence-pipelines/
 ├── pipelines/
 │   ├── 01_entity_graph/
 │   │   ├── manifest.yaml
-│   │   ├── README.md
 │   │   ├── assets.py
 │   │   ├── config.example.yaml
 │   │   ├── src/
@@ -136,7 +135,7 @@ investment-diligence-pipelines/
     └── validate_manifests.py
 ```
 
-Pipeline directories own source-specific extraction and domain logic. Shared code belongs in `src/diligence_pipelines/` only after at least two pipelines need the same behavior. This keeps the core small and prevents speculative abstractions.
+Pipeline documentation is stored under `docs/pipelines/`; pipeline directories own source-specific extraction and domain logic. Shared code belongs in `src/diligence_pipelines/` only after at least two pipelines need the same behavior. This keeps the core small and prevents speculative abstractions.
 
 ## 6. Architecture and data flow
 

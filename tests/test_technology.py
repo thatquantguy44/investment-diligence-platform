@@ -1,4 +1,4 @@
-from diligence_pipelines.technology import derive_topic_observation
+from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
 
 
 def test_topic_observation_has_reproducible_formula_and_inputs():
@@ -10,3 +10,10 @@ def test_topic_observation_has_reproducible_formula_and_inputs():
     assert observation["value"] == 2.0
     assert observation["formula_version"] == "research_work_count.v1"
     assert observation["input_record_ids"] == ["research_work:1", "research_work:2"]
+
+
+def test_institution_edges_preserve_affiliation_limitation():
+    records = [{"work_id": "W1", "source_record_id": "source:1", "institutions": [{"id": "I1", "name": "Example University"}]}]
+    edges = derive_institution_edges(records, "run-1")
+    assert edges[0]["relationship_type"] == "authorship_affiliation"
+    assert "not evidence of employment" in edges[0]["limitations"][0]

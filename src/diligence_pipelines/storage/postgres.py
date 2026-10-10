@@ -92,6 +92,39 @@ class PostgresStorage:
                     PRIMARY KEY (observation_id, run_id)
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.patent_records (
+                    patent_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (patent_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.patent_assignments (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    PRIMARY KEY (record_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.inventor_edges (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    PRIMARY KEY (record_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.institution_edges (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    PRIMARY KEY (record_id, run_id)
+                )
+            """)
         connection.commit()
 
     def write_raw(self, capture: RawCapture) -> str:
@@ -142,7 +175,7 @@ class PostgresStorage:
             self._connection.close()
             self._connection = None
 
-    def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], observations: list[dict[str, Any]] | None = None) -> str:
+    def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], observations: list[dict[str, Any]] | None = None, patent_records: list[dict[str, Any]] | None = None, assignments: list[dict[str, Any]] | None = None, inventor_edges: list[dict[str, Any]] | None = None, institution_edges: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
         with connection.cursor() as cursor:
             for record in records:
@@ -157,6 +190,19 @@ class PostgresStorage:
                     VALUES (%s, %s, %s)
                     ON CONFLICT (observation_id, run_id) DO UPDATE SET record = EXCLUDED.record
                 """, (observation["observation_id"], run_id, json.dumps(observation, default=str)))
+            for patent in patent_records or []:
+                cursor.execute("""
+                    INSERT INTO diligence.patent_records (patent_id, run_id, record)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (patent_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (patent["patent_id"], run_id, json.dumps(patent, default=str)))
+            for table, rows in (("patent_assignments", assignments), ("inventor_edges", inventor_edges), ("institution_edges", institution_edges)):
+                for row in rows or []:
+                    cursor.execute(f"""
+                        INSERT INTO diligence.{table} (record_id, run_id, record)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (record_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                    """, (row["record_id"], run_id, json.dumps(row, default=str)))
             cursor.execute("""
                 INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
                 VALUES (%s, %s, %s, %s)

@@ -15,7 +15,7 @@ Pipeline 01 is complete for the current pilot boundary. It provides the patterns
 
 Do not import QuantSmith code into this repository.
 
-The first Pipeline 02 slice is now implemented: `02_technology_talent` accepts an OpenAlex search query, captures the API response, normalizes research works with authors and institutions, validates source references and unique work IDs, and publishes to `diligence.research_works` plus `diligence.product_manifests`.
+Pipeline 02 is now pilot-complete for its bounded slice: `02_technology_talent` accepts an OpenAlex search query plus either a live USPTO/PatentsView API key or a synthetic patent fixture, captures both responses, normalizes research works, patents, assignments, inventor edges, and institution edges, derives a deterministic topic observation, validates source references and unique IDs, and publishes to PostgreSQL plus `diligence.product_manifests`.
 
 ## Pipeline 02 scope from Spec 0001
 
@@ -37,12 +37,10 @@ Required outputs:
 
 ## Recommended implementation sequence
 
-1. Add source adapters under `src/diligence_pipelines/sources/` only for behavior needed by this pipeline; keep source-native payloads intact.
-2. Extend the source-specific Pydantic records. Preserve application, filing, publication, assignment, grant, and first-seen dates separately.
-4. Link patent assignees and inventors to Pipeline 01 entities through explicit match candidates and review states. Do not infer employment from coauthorship alone.
-5. Add deterministic formulas for time-windowed counts and topic observations. Patent counts are signals, not quality judgments.
-6. Add synthetic fixtures and HTTP replay tests before live calls.
-7. Publish a product manifest with formula versions, source hashes, coverage, missingness, and limitations.
+1. Link patent assignees and inventors to Pipeline 01 entities through explicit match candidates and review states. Do not infer employment from coauthorship alone.
+2. Add deterministic formulas for richer time-windowed counts and topic observations. Patent counts are signals, not quality judgments.
+3. Add source-specific HTTP replay tests for API errors, pagination, and schema drift.
+4. Publish coverage and missingness metrics for live patent/research runs.
 
 ## Acceptance criteria
 

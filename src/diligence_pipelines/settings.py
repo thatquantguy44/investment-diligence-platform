@@ -19,6 +19,7 @@ class Settings:
     postgres_user: str = "postgres"
     postgres_password: str = ""
     sec_user_agent: str = "investment-diligence-pipelines/0.1 contact@example.com"
+    uspto_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -48,4 +49,5 @@ class Settings:
             postgres_user=value("DILIGENCE_POSTGRES_USER", "postgres"),
             postgres_password=value("DILIGENCE_POSTGRES_PASSWORD", ""),
             sec_user_agent=value("SEC_USER_AGENT", "investment-diligence-pipelines/0.1 contact@example.com"),
+            uspto_api_key=value("USPTO_API_KEY", "") or None,
         )
