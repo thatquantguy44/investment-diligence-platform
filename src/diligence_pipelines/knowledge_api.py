@@ -33,6 +33,20 @@ def _records(connection, table: str, key: str, limit: int) -> list[dict]:
         return [{"key": row[0], "run_id": str(row[1]), "record": row[2], "created_at": row[3].isoformat()} for row in cursor.fetchall()]
 
 
+def _patent_catalog_records(connection, limit: int) -> list[dict]:
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT patent_id, record, updated_at
+            FROM diligence.patent_catalog
+            ORDER BY updated_at DESC, patent_id
+            LIMIT %s
+        """, (limit,))
+        rows = cursor.fetchall()
+    if rows:
+        return [{"key": row[0], "run_id": "canonical", "record": row[1], "created_at": row[2].isoformat()} for row in rows]
+    return _records(connection, "patent_records", "patent_id", limit)
+
+
 def _edge_records(connection, table: str, limit: int) -> list[dict]:
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT record FROM diligence.{table} ORDER BY run_id DESC LIMIT %s", (limit,))
@@ -65,7 +79,7 @@ def build_graph(connection, limit: int = 80) -> dict:
     limit = max(1, min(limit, 500))
     entities = _records(connection, "entities", "entity_id", limit)
     works = _records(connection, "research_works", "work_id", limit)
-    patents = _records(connection, "patent_records", "patent_id", limit)
+    patents = _patent_catalog_records(connection, limit)
     aliases = _edge_records(connection, "entity_aliases", limit)
     assignments = _edge_records(connection, "patent_assignments", limit)
     inventors = _edge_records(connection, "inventor_edges", limit)

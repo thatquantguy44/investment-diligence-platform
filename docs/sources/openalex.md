@@ -20,7 +20,7 @@ The current adapter sends this as the `mailto` query parameter. A free OpenAlex 
 https://api.openalex.org/works?search=<query>&per-page=<1..200>&mailto=<optional-email>
 ```
 
-The current Pipeline 02 CLI requires a query and bounds `--max-results` to 1–200. Requests have bounded retries for transport failures and HTTP 429/5xx responses.
+The current Pipeline 02 CLI requires a query and bounds `--max-results` to 1–200. Requests have bounded retries for transport failures and HTTP 429/5xx responses. OpenAlex 429 responses are retried with longer exponential backoff; when the server sends `Retry-After`, the adapter honors either seconds or an HTTP date, capped at 60 seconds per retry.
 
 ## Run examples
 

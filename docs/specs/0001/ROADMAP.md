@@ -18,6 +18,8 @@ The cross-spec sequencing lives in the repository [MASTER_ROADMAP.md](../../MAST
 4. Source pagination, rate-limit, and HTTP replay tests — implemented for catalog discovery.
 5. Release diff reporting and controlled PostgreSQL refresh preparation — implemented; ingestion remains explicit.
 6. Full-release ingestion at production scale and alerting — next.
+7. Deduplicated canonical `patent_catalog` materialization — implemented; backfill is explicit after a completed index load.
+8. OpenAlex 429 handling with `Retry-After` support and bounded longer backoff — implemented and tested.
 
 ## Pipeline 02 — lower-priority backlog
 
@@ -44,8 +46,10 @@ quality.
 
 ## Pipeline 03 follow-ons
 
-- Validate the live UN Comtrade connector and subscription/coverage behavior.
-- Add production source-vintage controls and broader country/product coverage.
+- [x] Add a non-publishing Comtrade validation path with schema, identifier, source-reference, metadata, and configured-coverage checks.
+- [x] Preserve response counts, content hashes, and source-vintage/revision fields in the published product manifest when exposed by the source.
+- [ ] Validate the live UN Comtrade connector and subscription/coverage behavior against the configured account and target reporter.
+- [ ] Add broader country/product coverage and an explicit refresh cadence after live coverage is reviewed.
 - Keep company-level attribution out of scope unless supported by separate
   company-specific evidence.
 

@@ -38,7 +38,32 @@ class LocalStorage:
     def upsert_patent_index(self, records: list[dict], metadata: dict) -> int:
         self.write_jsonl("indexes/uspto_patents/patent_index.jsonl", records)
         self.write_jsonl("indexes/uspto_patents/index_runs.jsonl", [metadata])
+        self.upsert_patent_catalog(records, metadata["source_file_sha256"], metadata.get("source_release"))
         return len(records)
+
+    def upsert_patent_catalog(self, records: list[dict], source_file_sha256: str, source_release: str | None = None) -> int:
+        path = self.root / "indexes/uspto_patents/patent_catalog.jsonl"
+        existing = {}
+        if path.exists():
+            existing = {row["patent_id"]: row for row in (json.loads(line) for line in path.read_text().splitlines() if line.strip())}
+        for record in records:
+            existing[record["patent_id"]] = {
+                "patent_id": record["patent_id"],
+                "source_file_sha256": source_file_sha256,
+                "source_release": source_release,
+                "record": record,
+            }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(row, default=str) + "\n" for row in existing.values()))
+        return len(records)
+
+    def materialize_patent_catalog(self) -> int:
+        index_path = self.root / "indexes/uspto_patents/patent_index.jsonl"
+        if not index_path.exists():
+            return 0
+        records = [json.loads(line) for line in index_path.read_text().splitlines() if line.strip()]
+        source_hashes = {record.get("source_file_sha256") for record in records if record.get("source_file_sha256")}
+        return self.upsert_patent_catalog(records, next(iter(source_hashes), "unknown"))
 
     def record_uspto_odp_discovery(self, report: dict) -> str:
         """Persist the latest catalog snapshot and retain discovery history."""

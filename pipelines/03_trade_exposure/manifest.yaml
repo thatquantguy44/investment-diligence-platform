@@ -14,4 +14,4 @@ schedule: manual
 partition_by: [reporter_code, period, hs_code, retrieval_date]
 sensitivity: public
 model_use: none
-quality_checks: [trade_schema_valid, trade_identifier_unique, trade_source_ref_present, coverage_report_present]
+quality_checks: [trade_schema_valid, trade_identifier_unique, trade_source_ref_present, trade_result_count, coverage_report_present, trade_configured_coverage, trade_source_metadata_present]

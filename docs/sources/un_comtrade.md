@@ -12,8 +12,15 @@ For broader API access, bulk files, or higher limits, obtain a UN Comtrade subsc
 
 ```yaml
 COMTRADE_API_KEY: "your-key-here"
+COMTRADE_API_KEY_PRIMARY: "your-primary-key-here"
+COMTRADE_API_KEY_SECONDARY: "your-secondary-key-here"
 COMTRADE_API_URL: "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
 ```
+
+Use `COMTRADE_API_KEY_PRIMARY` and `COMTRADE_API_KEY_SECONDARY` for two-key
+operation. The adapter tries the primary key first and falls back to the
+secondary key on HTTP 401, 403, or 429 responses. `COMTRADE_API_KEY` remains
+supported as a legacy single-key setting.
 
 The key belongs in the ignored local variables file or environment only. Do not place it in the React app.
 
@@ -40,6 +47,17 @@ PYTHONPATH=src python -m diligence_pipelines.cli run 03_trade_exposure \
   --hs-code 850760
 ```
 
+Validate a response before publishing it:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli validate-comtrade \
+  --period 2024 \
+  --reporter-code 842 \
+  --hs-code 850760
+```
+
+This is a read-only validation step. It checks normalized identifiers, source references, response metadata, and configured HS-code coverage. It does not create raw or curated objects. Published manifests retain the response hash plus any source-vintage, data-version, release, or original/revision fields exposed by the response; absence of those fields is recorded rather than inferred.
+
 Repeat `--hs-code` for a configured sector basket. Use `YYYY` for annual periods and `YYYYMM` for monthly periods when supported by the selected endpoint.
 
 ## Outputs and formulas
@@ -53,7 +71,7 @@ The product manifest records configured and observed HS codes, missingness, mirr
 ## Controls and limitations
 
 - Country/product aggregates do not establish named-company import/export activity.
-- Track reporter coverage, partner coverage, flow direction, units, re-exports, revisions, and HS-code classification vintage.
+- Track reporter coverage, partner coverage, flow direction, units, re-exports, revisions, and HS-code classification vintage. The adapter captures response-level counts and row-level vintage/revision fields when the endpoint exposes them.
 - Mirror differences can reflect timing, valuation, routing, re-exports, units, or reporting coverage.
 - `un_comtrade_fixture` and `trade_flows.json` are synthetic test inputs.
 - Confirm the current subscription tier, quota, and data-use terms before production use.
@@ -61,6 +79,10 @@ The product manifest records configured and observed HS codes, missingness, mirr
 ## Official references
 
 - [UN Comtrade API](https://uncomtrade.org/docs/un-comtrade-api/)
+- [UN Comtrade reporter and country codes](https://uncomtrade.org/docs/country-codes/)
+- [Official reporter reference JSON](https://comtradeapi.un.org/files/v1/app/reference/Reporters.json)
+- [HS, SITC, BEC conversion and correspondence tables](https://uncomtrade.org/docs/hs-sitc-bec-conversion-and-correspondence-tables/)
+- [HS classification conversion guidance](https://uncomtrade.org/docs/data-conversion/)
 - [UN Comtrade subscription plans](https://uncomtrade.org/docs/subscriptions/)
 - [UN Comtrade API subscription keys](https://uncomtrade.org/docs/api-subscription-keys/)
 - [UN Comtrade data-use policy](https://uncomtrade.org/docs/policy-on-comtrade-data-use/)

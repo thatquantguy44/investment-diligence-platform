@@ -24,7 +24,14 @@ def fetch_openalex_works(query: str, max_results: int = 25, email: str | None = 
     uri = f"{OPENALEX_WORKS_URL}?{urlencode(params)}"
     request = Request(uri, headers={"User-Agent": "investment-diligence-pipelines/0.1"})
     context = ssl.create_default_context(cafile=certifi.where())
-    with open_url_with_retries(request, timeout=30, context=context) as response:
+    with open_url_with_retries(
+        request,
+        timeout=30,
+        context=context,
+        attempts=5,
+        backoff_seconds=2.0,
+        max_backoff_seconds=60.0,
+    ) as response:
         payload = response.read()
         status = getattr(response, "status", None)
     return RawCapture(request=SourceRequest("openalex", uri, params), payload=payload, status_code=status or 200, adapter_version="openalex-works-1.0.0")
