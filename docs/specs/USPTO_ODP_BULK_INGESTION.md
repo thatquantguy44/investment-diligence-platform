@@ -32,7 +32,13 @@ Replace the retired PatentsView query dependency with a reproducible local paten
 6. **Implemented:** bounded streaming joins for patent abstracts and disambiguated assignees.
 7. **Implemented:** resumable batch ingestion with PostgreSQL enrichment staging and a final SQL apply step.
 8. **Implemented:** PostgreSQL full-text search and Pipeline 02 routing through the durable index.
-9. **Next:** incremental refresh, checksum-based deduplication, schema-drift checks, coverage metrics, and reviewable assignee-to-entity candidates.
+9. **Next:** incremental refresh, checksum-based deduplication, schema-drift checks, and coverage metrics.
+
+### Lower-priority roadmap
+
+- Generate reviewable assignee-to-entity candidates against Pipeline 01.
+- Keep candidate confidence, evidence, and review state explicit.
+- Do not infer current ownership or employment from an assignee record alone.
 
 ## Test command
 

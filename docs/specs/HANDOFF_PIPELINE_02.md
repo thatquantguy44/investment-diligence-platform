@@ -37,10 +37,11 @@ Required outputs:
 
 ## Recommended implementation sequence
 
-1. Link patent assignees and inventors to Pipeline 01 entities through explicit match candidates and review states. Do not infer employment from coauthorship alone.
-2. Add deterministic formulas for richer time-windowed counts and topic observations. Patent counts are signals, not quality judgments.
-3. Add source-specific HTTP replay tests for API errors, pagination, and schema drift.
-4. Publish coverage and missingness metrics for live patent/research runs.
+1. Add deterministic formulas for richer time-windowed counts and topic observations. Patent counts are signals, not quality judgments.
+2. Add source-specific HTTP replay tests for API errors, pagination, and schema drift.
+3. Publish coverage and missingness metrics for live patent/research runs.
+
+Lower priority: link patent assignees and inventors to Pipeline 01 entities through explicit match candidates and review states. Do not infer current ownership or employment from these records alone.
 
 ## Acceptance criteria
 

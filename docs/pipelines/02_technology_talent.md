@@ -45,3 +45,5 @@ PYTHONPATH=src python -m diligence_pipelines.cli search-uspto-index \
 ```
 
 Use `--patent-source api` to explicitly select the legacy API path, or `--patent-fixture` / `--patent-bulk-file` for replay tests.
+
+Entity matching is intentionally deferred from the active Pipeline 02 scope. The current product reports patent assignees as source evidence; assignee-to-entity candidates are a lower-priority roadmap item requiring explicit confidence, evidence, and analyst review.
