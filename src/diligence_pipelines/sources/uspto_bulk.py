@@ -68,6 +68,11 @@ def _row_reader(path: Path):
             yield iter(_records_from_bytes(path.read_bytes(), path.name))
 
 
+def iter_bulk_rows(path: Path):
+    with _row_reader(path) as rows:
+        yield from rows
+
+
 def _first(row: dict, *keys: str) -> object:
     for key in keys:
         value = row.get(key)
@@ -131,25 +136,24 @@ def load_bulk_patent_index(path: Path, limit: int | None = None) -> tuple[list[d
     payload = path.read_bytes()
     records = []
     skipped = 0
-    with _row_reader(path) as rows:
-        for row in rows:
-            patent = _to_patent(row)
-            if patent is None:
-                skipped += 1
-                continue
-            records.append({
-                "record_id": f"patent_index:{patent['patent_id']}",
-                "schema_version": "1.0.0",
-                "source_id": "uspto_patents_bulk",
-                "patent_id": patent["patent_id"],
-                "title": patent["patent_title"],
-                "abstract": patent.get("patent_abstract"),
-                "patent_date": patent.get("patent_date"),
-                "patent_type": patent.get("patent_type"),
-                "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
-            })
-            if limit is not None and len(records) >= limit:
-                break
+    for row in iter_bulk_rows(path):
+        patent = _to_patent(row)
+        if patent is None:
+            skipped += 1
+            continue
+        records.append({
+            "record_id": f"patent_index:{patent['patent_id']}",
+            "schema_version": "1.0.0",
+            "source_id": "uspto_patents_bulk",
+            "patent_id": patent["patent_id"],
+            "title": patent["patent_title"],
+            "abstract": patent.get("patent_abstract"),
+            "patent_date": patent.get("patent_date"),
+            "patent_type": patent.get("patent_type"),
+            "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
+        })
+        if limit is not None and len(records) >= limit:
+            break
     metadata = {
         "source_path": str(path),
         "source_file_sha256": hashlib.sha256(payload).hexdigest(),
@@ -159,3 +163,25 @@ def load_bulk_patent_index(path: Path, limit: int | None = None) -> tuple[list[d
         "limit": limit,
     }
     return records, metadata
+
+
+def enrich_bulk_patents(records: list[dict], abstract_path: Path | None = None, assignee_path: Path | None = None) -> list[dict]:
+    by_id = {record["patent_id"]: record for record in records}
+    for path, field, source_keys in (
+        (abstract_path, "abstract", ("patent_abstract", "abstract")),
+        (assignee_path, "assignee_name", ("disambig_assignee_organization", "assignee_organization", "assignee_name")),
+    ):
+        if path is None:
+            continue
+        remaining = set(by_id)
+        for row in iter_bulk_rows(path):
+            patent_id = _first(row, "patent_id", "patent_number", "publication_number")
+            if patent_id is None or str(patent_id) not in by_id:
+                continue
+            value = _first(row, *source_keys)
+            if value:
+                by_id[str(patent_id)][field] = str(value)
+                remaining.discard(str(patent_id))
+            if not remaining:
+                break
+    return list(by_id.values())

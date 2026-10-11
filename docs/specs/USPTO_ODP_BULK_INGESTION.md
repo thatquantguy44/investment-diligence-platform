@@ -29,7 +29,8 @@ Replace the retired PatentsView query dependency with a reproducible local paten
 3. **Implemented:** ODP product-catalog search command using an ODP API key.
 4. **Implemented:** deterministic catalog selection command that requires exactly one matching release/file.
 5. **Implemented:** schema-validated bulk indexing with PostgreSQL `diligence.patent_index` and a local replay index.
-6. **Next:** incremental refresh, checksum-based deduplication, schema-drift checks, and coverage metrics.
+6. **Implemented:** bounded streaming joins for patent abstracts and disambiguated assignees.
+7. **Next:** full-batch loading, incremental refresh, checksum-based deduplication, schema-drift checks, and coverage metrics.
 
 ## Test command
 
@@ -62,6 +63,16 @@ PYTHONPATH=src python -m diligence_pipelines.cli index-uspto-bulk \
 For a bounded live-artifact smoke test, add `--limit 100`. The ODP granted-patent file is large; a full load should be run as a planned batch job rather than an interactive test.
 
 PostgreSQL creates `diligence.patent_index` with a simple-language GIN search index and `diligence.patent_index_runs` for source checksums and ingestion metadata.
+
+Enrich the index from related ODP files:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli enrich-uspto-index \
+  --patent-file .data/uspto/g_patent.tsv.zip \
+  --abstract-file .data/uspto/g_patent_abstract.tsv.zip \
+  --assignee-file .data/uspto/g_assignee_disambiguated.tsv.zip \
+  --limit 100
+```
 
 Search the ODP product catalog:
 

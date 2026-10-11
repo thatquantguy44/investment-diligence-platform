@@ -11,7 +11,7 @@ import yaml
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.quality import validate_entities, validate_research_works
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, download_bulk_artifact, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, load_bulk_patent_index, normalize_gleif_alias, normalize_openalex_works, normalize_patents, normalize_sec_entity, search_odp_products, select_catalog_artifact
+from diligence_pipelines.sources import RawCapture, SourceRequest, download_bulk_artifact, enrich_bulk_patents, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, load_bulk_patent_index, normalize_gleif_alias, normalize_openalex_works, normalize_patents, normalize_sec_entity, search_odp_products, select_catalog_artifact
 from diligence_pipelines.storage import build_storage
 from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
 
@@ -70,6 +70,17 @@ def index_uspto_bulk(path: Path, limit: int | None, settings: Settings) -> int:
     storage = build_storage(settings)
     indexed = storage.upsert_patent_index(records, metadata)
     print(json.dumps({"status": "indexed", "indexed_count": indexed, **metadata}, indent=2))
+    return 0
+
+
+def enrich_uspto_index(patent_file: Path, abstract_file: Path | None, assignee_file: Path | None, limit: int | None, settings: Settings) -> int:
+    records, metadata = load_bulk_patent_index(patent_file, limit=limit)
+    records = enrich_bulk_patents(records, abstract_file, assignee_file)
+    metadata["abstract_source_path"] = str(abstract_file) if abstract_file else None
+    metadata["assignee_source_path"] = str(assignee_file) if assignee_file else None
+    storage = build_storage(settings)
+    enriched = storage.upsert_patent_index(records, metadata)
+    print(json.dumps({"status": "enriched", "enriched_count": enriched, **metadata}, indent=2))
     return 0
 
 
@@ -242,6 +253,11 @@ def main() -> int:
     index_parser = subparsers.add_parser("index-uspto-bulk")
     index_parser.add_argument("--file", type=Path, required=True, help="Downloaded USPTO ODP bulk artifact")
     index_parser.add_argument("--limit", type=int, help="Optional bounded pilot row count")
+    enrich_parser = subparsers.add_parser("enrich-uspto-index")
+    enrich_parser.add_argument("--patent-file", type=Path, required=True)
+    enrich_parser.add_argument("--abstract-file", type=Path)
+    enrich_parser.add_argument("--assignee-file", type=Path)
+    enrich_parser.add_argument("--limit", type=int, help="Optional bounded pilot row count")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("pipeline_id")
     run_parser.add_argument("--input", type=Path)
@@ -262,6 +278,8 @@ def main() -> int:
         return select_uspto_odp(args.catalog, args.contains, args.output)
     if args.command == "index-uspto-bulk":
         return index_uspto_bulk(args.file, args.limit, Settings.from_env())
+    if args.command == "enrich-uspto-index":
+        return enrich_uspto_index(args.patent_file, args.abstract_file, args.assignee_file, args.limit, Settings.from_env())
     if args.pipeline_id == "02_technology_talent":
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
