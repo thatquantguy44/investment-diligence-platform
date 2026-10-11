@@ -40,6 +40,21 @@ class LocalStorage:
         self.write_jsonl("indexes/uspto_patents/index_runs.jsonl", [metadata])
         return len(records)
 
+    def search_patent_index(self, query: str, limit: int = 25) -> list[dict]:
+        path = self.root / "indexes/uspto_patents/patent_index.jsonl"
+        if not path.exists():
+            return []
+        needle = query.casefold()
+        matches = []
+        for line in path.read_text().splitlines():
+            record = json.loads(line)
+            haystack = " ".join(str(record.get(field) or "") for field in ("title", "abstract", "assignee_name"))
+            if needle in haystack.casefold():
+                matches.append(record)
+                if len(matches) >= limit:
+                    break
+        return matches
+
     def publish_entity_product(self, run_id: str, entities: list[dict], product: dict, aliases: list[dict] | None = None, match_candidates: list[dict] | None = None) -> str:
         output = self.write_jsonl(f"curated/01_entity_graph/{run_id}/entities.jsonl", entities)
         self.write_jsonl(f"curated/01_entity_graph/{run_id}/entity_aliases.jsonl", aliases or [])

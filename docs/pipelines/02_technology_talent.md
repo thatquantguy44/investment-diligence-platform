@@ -35,3 +35,13 @@ This is the first build slice for the replacement architecture: source files rem
 Each output record retains source identifiers, dates, authors/inventors, institutions/assignees, source-record IDs, and run IDs. Patent and research records remain source evidence; inventor and institution edges do not establish employment by a target company. Raw responses and the product manifest are published to the configured backend.
 
 The USPTO migration currently provides PatentsView data downloads through the Open Data Portal rather than a documented drop-in replacement for this search request. Keep the endpoint configurable and update `USPTO_API_URL` locally when a supported replacement is available.
+
+When PostgreSQL is configured, Pipeline 02 automatically searches `diligence.patent_index` and no longer depends on the retired PatentsView search hostname. You can query the index directly:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli search-uspto-index \
+  --query "coherent laser detection" \
+  --limit 10
+```
+
+Use `--patent-source api` to explicitly select the legacy API path, or `--patent-fixture` / `--patent-bulk-file` for replay tests.

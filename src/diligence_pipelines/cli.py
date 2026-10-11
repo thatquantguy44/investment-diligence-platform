@@ -73,6 +73,13 @@ def index_uspto_bulk(path: Path, limit: int | None, settings: Settings) -> int:
     return 0
 
 
+def search_uspto_index(query: str, limit: int, settings: Settings) -> int:
+    storage = build_storage(settings)
+    results = storage.search_patent_index(query, limit=limit)
+    print(json.dumps({"query": query, "count": len(results), "results": results}, indent=2))
+    return 0
+
+
 def enrich_uspto_index(patent_file: Path, abstract_file: Path | None, assignee_file: Path | None, limit: int | None, settings: Settings) -> int:
     records, metadata = load_bulk_patent_index(patent_file, limit=limit)
     records = enrich_bulk_patents(records, abstract_file, assignee_file)
@@ -236,7 +243,7 @@ def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> in
     return 0
 
 
-def run_technology_talent(query: str, max_results: int, patent_fixture: Path | None, patent_bulk_file: Path | None, settings: Settings) -> int:
+def run_technology_talent(query: str, max_results: int, patent_fixture: Path | None, patent_bulk_file: Path | None, patent_source: str, settings: Settings) -> int:
     run_id = str(uuid.uuid4())
     storage = build_storage(settings)
     capture = fetch_openalex_works(query, max_results=max_results)
@@ -246,12 +253,29 @@ def run_technology_talent(query: str, max_results: int, patent_fixture: Path | N
     institution_edges = derive_institution_edges(records, run_id)
     if patent_fixture and patent_bulk_file:
         raise SystemExit("Use only one of --patent-fixture or --patent-bulk-file")
-    if patent_fixture:
+    patent_capture = None
+    if patent_source == "index" or (patent_source == "auto" and settings.storage_backend == "postgres" and not patent_fixture and not patent_bulk_file):
+        indexed = storage.search_patent_index(query, limit=max_results)
+        if not indexed:
+            if patent_source == "index":
+                raise SystemExit("No matching patents found in diligence.patent_index")
+        else:
+            patents = []
+            for row in indexed:
+                patent = {"patent_id": row["patent_id"], "patent_title": row["title"], "patent_date": row.get("patent_date"), "patent_type": row.get("patent_type")}
+                if row.get("abstract"):
+                    patent["patent_abstract"] = row["abstract"]
+                if row.get("assignee_name"):
+                    patent["assignees"] = [{"assignee_organization": row["assignee_name"]}]
+                patents.append(patent)
+            patent_payload = json.dumps({"patents": patents}, separators=(",", ":")).encode()
+            patent_capture = RawCapture(SourceRequest("uspto_patents_index", "postgresql://diligence/patent_index", {"query": query, "max_results": str(max_results)}), patent_payload, status_code=200, adapter_version="patent-index-1.0.0")
+    if patent_capture is None and patent_fixture:
         patent_payload = patent_fixture.read_bytes()
         patent_capture = RawCapture(SourceRequest("uspto_patents_fixture", patent_fixture.resolve().as_uri()), patent_payload, status_code=200, adapter_version="patent-fixture-1.0.0")
-    elif patent_bulk_file:
+    elif patent_capture is None and patent_bulk_file:
         patent_capture = fetch_patents_from_bulk_file(patent_bulk_file, query, max_results=max_results)
-    else:
+    elif patent_capture is None:
         if not settings.uspto_api_key:
             raise SystemExit("USPTO_API_KEY is required for live patent collection; use --patent-fixture for offline tests")
         patent_capture = fetch_patents(query, settings.uspto_api_key, max_results=max_results, api_url=settings.uspto_api_url)
@@ -296,6 +320,9 @@ def main() -> int:
     select_parser.add_argument("--catalog", type=Path, required=True, help="Catalog JSON returned by search-uspto-odp")
     select_parser.add_argument("--contains", required=True, help="Text that must identify exactly one catalog item/file")
     select_parser.add_argument("--output", type=Path, required=True, help="Selection manifest path")
+    patent_search_parser = subparsers.add_parser("search-uspto-index")
+    patent_search_parser.add_argument("--query", required=True)
+    patent_search_parser.add_argument("--limit", type=int, default=25)
     index_parser = subparsers.add_parser("index-uspto-bulk")
     index_parser.add_argument("--file", type=Path, required=True, help="Downloaded USPTO ODP bulk artifact")
     index_parser.add_argument("--limit", type=int, help="Optional bounded pilot row count")
@@ -319,6 +346,7 @@ def main() -> int:
     run_parser.add_argument("--max-results", type=int, default=25)
     run_parser.add_argument("--patent-fixture", type=Path, help="Synthetic USPTO response for offline Pipeline 02 tests")
     run_parser.add_argument("--patent-bulk-file", type=Path, help="Downloaded USPTO ODP bulk file (JSON, JSONL, CSV, or ZIP) to search locally")
+    run_parser.add_argument("--patent-source", choices=("auto", "index", "api"), default="auto", help="Patent source; auto uses PostgreSQL index when configured")
     args = parser.parse_args()
     if args.command == "validate-manifests":
         return validate_manifests()
@@ -328,6 +356,8 @@ def main() -> int:
         return search_uspto_odp(args.query, args.output, Settings.from_env())
     if args.command == "select-uspto-odp":
         return select_uspto_odp(args.catalog, args.contains, args.output)
+    if args.command == "search-uspto-index":
+        return search_uspto_index(args.query, args.limit, Settings.from_env())
     if args.command == "index-uspto-bulk":
         return index_uspto_bulk(args.file, args.limit, Settings.from_env())
     if args.command == "enrich-uspto-index":
@@ -337,7 +367,7 @@ def main() -> int:
     if args.pipeline_id == "02_technology_talent":
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
-        return run_technology_talent(args.query, args.max_results, args.patent_fixture, args.patent_bulk_file, Settings.from_env())
+        return run_technology_talent(args.query, args.max_results, args.patent_fixture, args.patent_bulk_file, args.patent_source, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
         parser.error("Implemented pipelines are 01_entity_graph and 02_technology_talent")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:

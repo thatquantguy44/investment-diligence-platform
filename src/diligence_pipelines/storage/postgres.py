@@ -258,6 +258,18 @@ class PostgresStorage:
         connection.commit()
         return updated
 
+    def search_patent_index(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT record
+                FROM diligence.patent_index
+                WHERE to_tsvector('simple', search_text) @@ plainto_tsquery('simple', %s)
+                ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', %s)) DESC, patent_id
+                LIMIT %s
+            """, (query, query, limit))
+            return [row[0] for row in cursor.fetchall()]
+
     def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], observations: list[dict[str, Any]] | None = None, patent_records: list[dict[str, Any]] | None = None, assignments: list[dict[str, Any]] | None = None, inventor_edges: list[dict[str, Any]] | None = None, institution_edges: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
         with connection.cursor() as cursor:
