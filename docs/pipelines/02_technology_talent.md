@@ -2,6 +2,8 @@
 
 The pilot combines OpenAlex research metadata with a USPTO/PatentsView patent response to create `research_works`, `patent_records`, `patent_assignments`, `inventor_edges`, `institution_edges`, and deterministic `technology_topic_observations`. It is intentionally not an employment or technology-quality classifier.
 
+Publication now quality-checks both research works and patent records for required identifiers, source references, duplicate IDs, and empty-result warnings before materialization.
+
 Run a bounded search:
 
 ```bash

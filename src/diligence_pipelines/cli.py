@@ -9,9 +9,9 @@ from pathlib import Path
 import yaml
 
 from diligence_pipelines.contracts import Entity
-from diligence_pipelines.quality import validate_entities, validate_research_works
+from diligence_pipelines.quality import validate_entities, validate_patent_records, validate_research_works
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, download_bulk_artifact, enrich_bulk_patents, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, normalize_gleif_alias, normalize_openalex_works, normalize_patents, normalize_sec_entity, search_odp_products, select_catalog_artifact
+from diligence_pipelines.sources import RawCapture, SourceRequest, download_bulk_artifact, enrich_bulk_patents, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, search_odp_products, select_catalog_artifact
 from diligence_pipelines.storage import build_storage
 from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
 
@@ -193,6 +193,9 @@ def load_watchlist(path: Path) -> list[dict[str, str]]:
         if not isinstance(entry, dict) or not entry.get("cik"):
             raise ValueError("Each watchlist entry requires a cik")
         cik = str(entry["cik"])
+        normalize_cik(cik)
+        if entry.get("lei"):
+            normalize_lei(str(entry["lei"]))
         if cik in seen:
             continue
         seen.add(cik)
@@ -282,7 +285,7 @@ def run_technology_talent(query: str, max_results: int, patent_fixture: Path | N
     patent_uri = storage.write_raw(patent_capture)
     patent_source_record_id = f"source:{patent_capture.content_sha256}"
     patent_records, assignments, inventor_edges = normalize_patents(patent_capture.payload, run_id, patent_source_record_id)
-    quality = validate_research_works(records)
+    quality = validate_research_works(records) + validate_patent_records(patent_records)
     failed = [result for result in quality if result.status == "fail"]
     if failed:
         print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))

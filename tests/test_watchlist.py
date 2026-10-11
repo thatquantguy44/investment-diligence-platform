@@ -10,6 +10,17 @@ def test_watchlist_deduplicates_ciks(tmp_path: Path):
     assert [item["cik"] for item in load_watchlist(path)] == ["320193", "789019"]
 
 
+def test_watchlist_rejects_invalid_identifier_syntax(tmp_path: Path):
+    path = tmp_path / "watchlist.yaml"
+    path.write_text("entities:\n  - cik: 'not-a-cik'\n")
+    try:
+        load_watchlist(path)
+    except ValueError as exc:
+        assert "CIK" in str(exc)
+    else:
+        raise AssertionError("invalid CIK was accepted")
+
+
 def test_lei_validation_and_alias_normalization():
     lei = "5493001KJTIIGC8Y1R12"
     assert normalize_lei(lei) == lei

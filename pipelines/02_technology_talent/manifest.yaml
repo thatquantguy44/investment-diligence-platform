@@ -19,4 +19,4 @@ schedule: manual
 partition_by: [source_id, query, retrieval_date]
 sensitivity: public
 model_use: none
-quality_checks: [schema_valid, identifier_unique, source_ref_present]
+quality_checks: [schema_valid, identifier_unique, source_ref_present, patent_schema_valid, patent_identifier_unique, patent_source_ref_present, patent_result_count]
