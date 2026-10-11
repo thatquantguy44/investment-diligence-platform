@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import ssl
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 import certifi
 
-from diligence_pipelines.sources.base import RawCapture, SourceRequest
+from diligence_pipelines.sources.base import RawCapture, SourceRequest, open_url_with_retries
 
 
 GLEIF_LEI_URL = "https://api.gleif.org/api/v1/lei-records/{lei}"
@@ -24,7 +24,7 @@ def fetch_gleif_lei(lei: str) -> RawCapture:
     uri = GLEIF_LEI_URL.format(lei=normalized_lei)
     request = Request(uri, headers={"User-Agent": "investment-diligence-pipelines/0.1"})
     context = ssl.create_default_context(cafile=certifi.where())
-    with urlopen(request, timeout=30, context=context) as response:
+    with open_url_with_retries(request, timeout=30, context=context) as response:
         payload = response.read()
         status = getattr(response, "status", None)
     return RawCapture(

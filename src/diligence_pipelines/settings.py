@@ -19,6 +19,7 @@ class Settings:
     postgres_user: str = "postgres"
     postgres_password: str = ""
     sec_user_agent: str = "investment-diligence-pipelines/0.1 contact@example.com"
+    openalex_email: str | None = None
     uspto_api_key: str | None = None
     uspto_api_url: str = "https://search.patentsview.org/api/v1/patent/"
     uspto_odp_catalog_url: str = "https://api.uspto.gov/api/v1/datasets/products/search"
@@ -51,6 +52,7 @@ class Settings:
             postgres_user=value("DILIGENCE_POSTGRES_USER", "postgres"),
             postgres_password=value("DILIGENCE_POSTGRES_PASSWORD", ""),
             sec_user_agent=value("SEC_USER_AGENT", "investment-diligence-pipelines/0.1 contact@example.com"),
+            openalex_email=value("OPENALEX_EMAIL", "") or None,
             uspto_api_key=value("USPTO_API_KEY", "") or None,
             uspto_api_url=value("USPTO_API_URL", "https://search.patentsview.org/api/v1/patent/"),
             uspto_odp_catalog_url=value("USPTO_ODP_CATALOG_URL", "https://api.uspto.gov/api/v1/datasets/products/search"),

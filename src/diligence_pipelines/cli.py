@@ -246,10 +246,16 @@ def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> in
     return 0
 
 
-def run_technology_talent(query: str, max_results: int, patent_fixture: Path | None, patent_bulk_file: Path | None, patent_source: str, settings: Settings) -> int:
+def run_technology_talent(query: str, max_results: int, openalex_fixture: Path | None, patent_fixture: Path | None, patent_bulk_file: Path | None, patent_source: str, settings: Settings) -> int:
     run_id = str(uuid.uuid4())
     storage = build_storage(settings)
-    capture = fetch_openalex_works(query, max_results=max_results)
+    if openalex_fixture:
+        capture = RawCapture(
+            SourceRequest("openalex_fixture", openalex_fixture.resolve().as_uri(), {"query": query, "max_results": str(max_results)}),
+            openalex_fixture.read_bytes(), status_code=200, adapter_version="openalex-fixture-1.0.0",
+        )
+    else:
+        capture = fetch_openalex_works(query, max_results=max_results, email=settings.openalex_email)
     raw_uri = storage.write_raw(capture)
     source_record_id = f"source:{capture.content_sha256}"
     records = normalize_openalex_works(capture.payload, run_id, source_record_id)
@@ -347,6 +353,7 @@ def main() -> int:
     run_parser.add_argument("--watchlist", type=Path, help="YAML watchlist with entities containing cik and optional lei")
     run_parser.add_argument("--query", help="OpenAlex search query for Pipeline 02")
     run_parser.add_argument("--max-results", type=int, default=25)
+    run_parser.add_argument("--openalex-fixture", type=Path, help="Synthetic OpenAlex response for fully offline Pipeline 02 tests")
     run_parser.add_argument("--patent-fixture", type=Path, help="Synthetic USPTO response for offline Pipeline 02 tests")
     run_parser.add_argument("--patent-bulk-file", type=Path, help="Downloaded USPTO ODP bulk file (JSON, JSONL, CSV, or ZIP) to search locally")
     run_parser.add_argument("--patent-source", choices=("auto", "index", "api"), default="auto", help="Patent source; auto uses PostgreSQL index when configured")
@@ -370,7 +377,7 @@ def main() -> int:
     if args.pipeline_id == "02_technology_talent":
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
-        return run_technology_talent(args.query, args.max_results, args.patent_fixture, args.patent_bulk_file, args.patent_source, Settings.from_env())
+        return run_technology_talent(args.query, args.max_results, args.openalex_fixture, args.patent_fixture, args.patent_bulk_file, args.patent_source, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
         parser.error("Implemented pipelines are 01_entity_graph and 02_technology_talent")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:

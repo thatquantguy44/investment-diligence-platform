@@ -4,6 +4,8 @@ The pilot combines OpenAlex research metadata with a USPTO/PatentsView patent re
 
 Publication now quality-checks both research works and patent records for required identifiers, source references, duplicate IDs, and empty-result warnings before materialization.
 
+Source requests use bounded retries for transient transport failures and HTTP 429/5xx responses. Set `OPENALEX_EMAIL` optionally to identify the client; OpenAlex does not require an API key.
+
 Run a bounded search:
 
 ```bash
@@ -18,6 +20,16 @@ Live patent collection requires `USPTO_API_KEY` in `config/variables.yaml` or th
 PYTHONPATH=src python -m diligence_pipelines.cli run 02_technology_talent \
   --query "solid state battery" \
   --max-results 1 \
+  --patent-fixture tests/fixtures/patents.json
+```
+
+For a fully offline replay of both sources, use the checked-in OpenAlex and USPTO fixtures:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli run 02_technology_talent \
+  --query "solid state battery" \
+  --max-results 1 \
+  --openalex-fixture tests/fixtures/openalex_works.json \
   --patent-fixture tests/fixtures/patents.json
 ```
 

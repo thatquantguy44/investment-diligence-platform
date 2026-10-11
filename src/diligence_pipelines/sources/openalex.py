@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import ssl
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 import certifi
 
-from diligence_pipelines.sources.base import RawCapture, SourceRequest
+from diligence_pipelines.sources.base import RawCapture, SourceRequest, open_url_with_retries
 
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
@@ -24,7 +24,7 @@ def fetch_openalex_works(query: str, max_results: int = 25, email: str | None = 
     uri = f"{OPENALEX_WORKS_URL}?{urlencode(params)}"
     request = Request(uri, headers={"User-Agent": "investment-diligence-pipelines/0.1"})
     context = ssl.create_default_context(cafile=certifi.where())
-    with urlopen(request, timeout=30, context=context) as response:
+    with open_url_with_retries(request, timeout=30, context=context) as response:
         payload = response.read()
         status = getattr(response, "status", None)
     return RawCapture(request=SourceRequest("openalex", uri, params), payload=payload, status_code=status or 200, adapter_version="openalex-works-1.0.0")
