@@ -59,6 +59,8 @@ PYTHONPATH=src python -m diligence_pipelines.cli index-uspto-bulk \
   --file .data/uspto/patents.jsonl
 ```
 
+For a bounded live-artifact smoke test, add `--limit 100`. The ODP granted-patent file is large; a full load should be run as a planned batch job rather than an interactive test.
+
 PostgreSQL creates `diligence.patent_index` with a simple-language GIN search index and `diligence.patent_index_runs` for source checksums and ingestion metadata.
 
 Search the ODP product catalog:

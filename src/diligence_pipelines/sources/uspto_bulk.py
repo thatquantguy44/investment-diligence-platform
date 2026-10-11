@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+from contextlib import contextmanager
 import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
@@ -19,12 +20,12 @@ def _records_from_bytes(payload: bytes, name: str) -> list[dict]:
             members = [member for member in archive.namelist() if not member.endswith("/")]
             if not members:
                 return []
-            member = next((item for item in members if Path(item).suffix.lower() in {".json", ".jsonl", ".csv"}), members[0])
+            member = next((item for item in members if Path(item).suffix.lower() in {".json", ".jsonl", ".csv", ".tsv"}), members[0])
             return _records_from_bytes(archive.read(member), member)
 
     text = payload.decode("utf-8-sig")
-    if suffix == ".csv" or ("\n" in text and "," in text.splitlines()[0] and not text.lstrip().startswith(("{", "["))):
-        return list(csv.DictReader(io.StringIO(text)))
+    if suffix in {".csv", ".tsv"} or ("\n" in text and "," in text.splitlines()[0] and not text.lstrip().startswith(("{", "["))):
+        return list(csv.DictReader(io.StringIO(text), delimiter="\t" if suffix == ".tsv" else ","))
 
     if suffix in {".jsonl", ".ndjson"}:
         return [json.loads(line) for line in text.splitlines() if line.strip()]
@@ -38,6 +39,33 @@ def _records_from_bytes(payload: bytes, name: str) -> list[dict]:
                 return [item for item in parsed[key] if isinstance(item, dict)]
         return [parsed]
     raise ValueError(f"Unsupported USPTO bulk payload: {name}")
+
+
+@contextmanager
+def _row_reader(path: Path):
+    if path.suffix.lower() == ".zip" or path.read_bytes()[:2] == b"PK":
+        archive = zipfile.ZipFile(path)
+        members = [member for member in archive.namelist() if not member.endswith("/")]
+        member = next((item for item in members if Path(item).suffix.lower() in {".csv", ".tsv", ".jsonl", ".ndjson"}), members[0])
+        handle = io.TextIOWrapper(archive.open(member), encoding="utf-8-sig")
+        try:
+            if Path(member).suffix.lower() in {".csv", ".tsv"}:
+                yield csv.DictReader(handle, delimiter="\t" if Path(member).suffix.lower() == ".tsv" else ",")
+            else:
+                yield (json.loads(line) for line in handle if line.strip())
+        finally:
+            handle.close()
+            archive.close()
+        return
+    if path.suffix.lower() in {".csv", ".tsv"}:
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            yield csv.DictReader(handle, delimiter="\t" if path.suffix.lower() == ".tsv" else ",")
+        return
+    with path.open(encoding="utf-8-sig") as handle:
+        if path.suffix.lower() in {".jsonl", ".ndjson"}:
+            yield (json.loads(line) for line in handle if line.strip())
+        else:
+            yield iter(_records_from_bytes(path.read_bytes(), path.name))
 
 
 def _first(row: dict, *keys: str) -> object:
@@ -98,32 +126,36 @@ def fetch_patents_from_bulk_file(path: Path, query: str, max_results: int = 25) 
     )
 
 
-def load_bulk_patent_index(path: Path) -> tuple[list[dict], dict]:
+def load_bulk_patent_index(path: Path, limit: int | None = None) -> tuple[list[dict], dict]:
     """Validate and normalize a bulk artifact for durable local/Postgres indexing."""
     payload = path.read_bytes()
     records = []
     skipped = 0
-    for row in _records_from_bytes(payload, path.name):
-        patent = _to_patent(row)
-        if patent is None:
-            skipped += 1
-            continue
-        records.append({
-            "record_id": f"patent_index:{patent['patent_id']}",
-            "schema_version": "1.0.0",
-            "source_id": "uspto_patents_bulk",
-            "patent_id": patent["patent_id"],
-            "title": patent["patent_title"],
-            "abstract": patent.get("patent_abstract"),
-            "patent_date": patent.get("patent_date"),
-            "patent_type": patent.get("patent_type"),
-            "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
-        })
+    with _row_reader(path) as rows:
+        for row in rows:
+            patent = _to_patent(row)
+            if patent is None:
+                skipped += 1
+                continue
+            records.append({
+                "record_id": f"patent_index:{patent['patent_id']}",
+                "schema_version": "1.0.0",
+                "source_id": "uspto_patents_bulk",
+                "patent_id": patent["patent_id"],
+                "title": patent["patent_title"],
+                "abstract": patent.get("patent_abstract"),
+                "patent_date": patent.get("patent_date"),
+                "patent_type": patent.get("patent_type"),
+                "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
+            })
+            if limit is not None and len(records) >= limit:
+                break
     metadata = {
         "source_path": str(path),
         "source_file_sha256": hashlib.sha256(payload).hexdigest(),
         "record_count": len(records),
         "skipped_count": skipped,
         "adapter_version": "uspto-odp-index-1.0.0",
+        "limit": limit,
     }
     return records, metadata

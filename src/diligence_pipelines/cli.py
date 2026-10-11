@@ -65,8 +65,8 @@ def select_uspto_odp(catalog: Path, contains: str, output: Path) -> int:
     return 0
 
 
-def index_uspto_bulk(path: Path, settings: Settings) -> int:
-    records, metadata = load_bulk_patent_index(path)
+def index_uspto_bulk(path: Path, limit: int | None, settings: Settings) -> int:
+    records, metadata = load_bulk_patent_index(path, limit=limit)
     storage = build_storage(settings)
     indexed = storage.upsert_patent_index(records, metadata)
     print(json.dumps({"status": "indexed", "indexed_count": indexed, **metadata}, indent=2))
@@ -241,6 +241,7 @@ def main() -> int:
     select_parser.add_argument("--output", type=Path, required=True, help="Selection manifest path")
     index_parser = subparsers.add_parser("index-uspto-bulk")
     index_parser.add_argument("--file", type=Path, required=True, help="Downloaded USPTO ODP bulk artifact")
+    index_parser.add_argument("--limit", type=int, help="Optional bounded pilot row count")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("pipeline_id")
     run_parser.add_argument("--input", type=Path)
@@ -260,7 +261,7 @@ def main() -> int:
     if args.command == "select-uspto-odp":
         return select_uspto_odp(args.catalog, args.contains, args.output)
     if args.command == "index-uspto-bulk":
-        return index_uspto_bulk(args.file, Settings.from_env())
+        return index_uspto_bulk(args.file, args.limit, Settings.from_env())
     if args.pipeline_id == "02_technology_talent":
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
