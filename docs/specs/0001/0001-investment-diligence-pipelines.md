@@ -6,6 +6,8 @@
 **Owner:** Quantitative diligence / data engineering  
 **Last updated:** 2026-10-10
 
+**Roadmap:** [ROADMAP.md](ROADMAP.md) | [Master roadmap](../../MASTER_ROADMAP.md)
+
 ## 1. Purpose
 
 Create a modular upstream repository for collecting, validating, linking, and publishing data products that support investment diligence on early-stage companies and their surrounding markets, with an initial focus on China and Southeast Asia.
@@ -115,7 +117,6 @@ investment-diligence-pipelines/
 ├── pipelines/
 │   ├── 01_entity_graph/
 │   │   ├── manifest.yaml
-│   │   ├── README.md
 │   │   ├── assets.py
 │   │   ├── config.example.yaml
 │   │   ├── src/
@@ -136,7 +137,7 @@ investment-diligence-pipelines/
     └── validate_manifests.py
 ```
 
-Pipeline directories own source-specific extraction and domain logic. Shared code belongs in `src/diligence_pipelines/` only after at least two pipelines need the same behavior. This keeps the core small and prevents speculative abstractions.
+Pipeline documentation is stored under `docs/pipelines/`; pipeline directories own source-specific extraction and domain logic. Shared code belongs in `src/diligence_pipelines/` only after at least two pipelines need the same behavior. This keeps the core small and prevents speculative abstractions.
 
 ## 6. Architecture and data flow
 

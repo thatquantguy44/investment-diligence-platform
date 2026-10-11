@@ -77,6 +77,21 @@ These are defaults, not hard-coded requirements. Use `DILIGENCE_POSTGRES_DSN` fo
 - Curated publication is blocked when required quality checks fail.
 - Secrets and production data are runtime concerns, never repository contents.
 
-See [docs/architecture.md](docs/architecture.md), [docs/data-contracts.md](docs/data-contracts.md), and [pipelines/01_entity_graph/README.md](pipelines/01_entity_graph/README.md).
+See [docs/architecture.md](docs/architecture.md), [docs/data-contracts.md](docs/data-contracts.md), and [docs/pipelines/01_entity_graph.md](docs/pipelines/01_entity_graph.md).
 
-For a complete implementation handoff, see [MASTER_HANDOFF.md](MASTER_HANDOFF.md).
+Source setup, credential handling, endpoints, rate limits, fixture paths, and operating controls are documented in [docs/sources/](docs/sources/README.md).
+
+For a complete implementation handoff, see [docs/MASTER_HANDOFF.md](docs/MASTER_HANDOFF.md).
+
+For cross-spec sequencing and deferred work, see [docs/MASTER_ROADMAP.md](docs/MASTER_ROADMAP.md). Each specification also has its own roadmap: [Spec 0001](docs/specs/0001/ROADMAP.md) and [Spec 0002](docs/specs/0002/ROADMAP.md).
+
+Machine-generated changes follow the [agent workflow](docs/CONTRIBUTING_AGENT_WORKFLOW.md). Before handoff or commit, validate code, manifests, documentation links, and whitespace:
+
+```bash
+PYTHONPATH=src python -m pytest -q
+PYTHONPATH=src python -m diligence_pipelines.cli validate-manifests
+PYTHONPATH=src python -m diligence_pipelines.cli validate-docs
+git diff --check
+```
+
+Pipeline 02 now has a pilot-complete OpenAlex + USPTO/PatentsView slice. See [docs/pipelines/02_technology_talent.md](docs/pipelines/02_technology_talent.md).

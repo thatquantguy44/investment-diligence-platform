@@ -75,6 +75,30 @@ class MatchCandidateRecord(BaseRecord):
     review_status: Literal["unreviewed", "accepted", "rejected"] = "unreviewed"
 
 
+class ResearchWork(BaseRecord):
+    work_id: str
+    title: str
+    publication_date: str | None = None
+    work_type: str | None = None
+    cited_by_count: int | None = Field(default=None, ge=0)
+    authors: list[dict[str, str]] = Field(default_factory=list)
+    institutions: list[dict[str, str]] = Field(default_factory=list)
+    source_record_id: str
+
+
+class TopicObservation(BaseRecord):
+    observation_id: str
+    entity_id: str | None = None
+    metric: str
+    value: float
+    unit: str
+    period_start: str | None = None
+    period_end: str | None = None
+    input_record_ids: list[str] = Field(default_factory=list)
+    formula_version: str
+    limitations: list[str] = Field(default_factory=list)
+
+
 class QualityResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     check_id: str

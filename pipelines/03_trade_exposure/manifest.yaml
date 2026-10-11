@@ -1,0 +1,17 @@
+pipeline_id: 03_trade_exposure
+title: Trade and supply-chain exposure
+status: pilot
+owner: quantitative-diligence-data-engineering
+purpose: Measure country/product trade flows and concentration for a bounded sector basket
+sources:
+  - source_id: un_comtrade
+    method: api
+    terms_reviewed: false
+    max_requests_per_minute: 10
+    allowed_domains: [comtradeapi.un.org]
+outputs: [trade_flows, product_country_exposure, partner_concentration, mirror_trade_discrepancies]
+schedule: manual
+partition_by: [reporter_code, period, hs_code, retrieval_date]
+sensitivity: public
+model_use: none
+quality_checks: [trade_schema_valid, trade_identifier_unique, trade_source_ref_present, coverage_report_present]

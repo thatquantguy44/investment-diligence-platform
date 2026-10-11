@@ -1,0 +1,22 @@
+pipeline_id: 02_technology_talent
+title: Technology and talent signals
+status: pilot
+owner: quantitative-diligence-data-engineering
+purpose: Compare company technology claims with research metadata and institutional evidence
+sources:
+  - source_id: openalex
+    method: api
+    terms_reviewed: false
+    max_requests_per_minute: 60
+    allowed_domains: [api.openalex.org]
+  - source_id: uspto_patents
+    method: api_or_bulk_file
+    terms_reviewed: false
+    max_requests_per_minute: 45
+    allowed_domains: [search.patentsview.org, api.uspto.gov, data.uspto.gov]
+outputs: [patent_records, patent_assignments, inventor_edges, research_works, institution_edges, technology_topic_observations]
+schedule: manual
+partition_by: [source_id, query, retrieval_date]
+sensitivity: public
+model_use: none
+quality_checks: [schema_valid, identifier_unique, source_ref_present, patent_schema_valid, patent_identifier_unique, patent_source_ref_present, patent_result_count]

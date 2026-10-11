@@ -19,6 +19,14 @@ class Settings:
     postgres_user: str = "postgres"
     postgres_password: str = ""
     sec_user_agent: str = "investment-diligence-pipelines/0.1 contact@example.com"
+    openalex_email: str | None = None
+    uspto_api_key: str | None = None
+    uspto_api_url: str = "https://search.patentsview.org/api/v1/patent/"
+    uspto_odp_catalog_url: str = "https://api.uspto.gov/api/v1/datasets/products/search"
+    uspto_odp_product_query: str = "PatentsView granted patent disambiguated"
+    uspto_odp_discovery_output: Path = Path(".data/uspto/odp_discovery.json")
+    comtrade_api_key: str | None = None
+    comtrade_api_url: str = "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -48,4 +56,12 @@ class Settings:
             postgres_user=value("DILIGENCE_POSTGRES_USER", "postgres"),
             postgres_password=value("DILIGENCE_POSTGRES_PASSWORD", ""),
             sec_user_agent=value("SEC_USER_AGENT", "investment-diligence-pipelines/0.1 contact@example.com"),
+            openalex_email=value("OPENALEX_EMAIL", "") or None,
+            uspto_api_key=value("USPTO_API_KEY", "") or None,
+            uspto_api_url=value("USPTO_API_URL", "https://search.patentsview.org/api/v1/patent/"),
+            uspto_odp_catalog_url=value("USPTO_ODP_CATALOG_URL", "https://api.uspto.gov/api/v1/datasets/products/search"),
+            uspto_odp_product_query=value("USPTO_ODP_PRODUCT_QUERY", "PatentsView granted patent disambiguated"),
+            uspto_odp_discovery_output=Path(value("USPTO_ODP_DISCOVERY_OUTPUT", ".data/uspto/odp_discovery.json")),
+            comtrade_api_key=value("COMTRADE_API_KEY", "") or None,
+            comtrade_api_url=value("COMTRADE_API_URL", "https://comtradeapi.un.org/public/v1/preview/C/A/HS"),
         )

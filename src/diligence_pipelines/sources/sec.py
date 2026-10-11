@@ -4,11 +4,11 @@ import json
 import gzip
 import re
 import ssl
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 import certifi
 
-from diligence_pipelines.sources.base import RawCapture, SourceRequest
+from diligence_pipelines.sources.base import RawCapture, SourceRequest, open_url_with_retries
 
 
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
@@ -26,7 +26,7 @@ def fetch_sec_submissions(cik: str, user_agent: str) -> RawCapture:
     uri = SEC_SUBMISSIONS_URL.format(cik=normalized_cik)
     request = Request(uri, headers={"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"})
     tls_context = ssl.create_default_context(cafile=certifi.where())
-    with urlopen(request, timeout=30, context=tls_context) as response:
+    with open_url_with_retries(request, timeout=30, context=tls_context) as response:
         payload = response.read()
         status = getattr(response, "status", None)
         if response.headers.get("Content-Encoding", "").lower() == "gzip" or payload[:2] == b"\x1f\x8b":
