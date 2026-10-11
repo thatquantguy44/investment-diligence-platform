@@ -73,6 +73,28 @@ def iter_bulk_rows(path: Path):
         yield from rows
 
 
+def iter_bulk_patent_index(path: Path, limit: int | None = None):
+    count = 0
+    for row in iter_bulk_rows(path):
+        patent = _to_patent(row)
+        if patent is None:
+            continue
+        yield {
+            "record_id": f"patent_index:{patent['patent_id']}",
+            "schema_version": "1.0.0",
+            "source_id": "uspto_patents_bulk",
+            "patent_id": patent["patent_id"],
+            "title": patent["patent_title"],
+            "abstract": patent.get("patent_abstract"),
+            "patent_date": patent.get("patent_date"),
+            "patent_type": patent.get("patent_type"),
+            "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
+        }
+        count += 1
+        if limit is not None and count >= limit:
+            return
+
+
 def _first(row: dict, *keys: str) -> object:
     for key in keys:
         value = row.get(key)
@@ -136,24 +158,7 @@ def load_bulk_patent_index(path: Path, limit: int | None = None) -> tuple[list[d
     payload = path.read_bytes()
     records = []
     skipped = 0
-    for row in iter_bulk_rows(path):
-        patent = _to_patent(row)
-        if patent is None:
-            skipped += 1
-            continue
-        records.append({
-            "record_id": f"patent_index:{patent['patent_id']}",
-            "schema_version": "1.0.0",
-            "source_id": "uspto_patents_bulk",
-            "patent_id": patent["patent_id"],
-            "title": patent["patent_title"],
-            "abstract": patent.get("patent_abstract"),
-            "patent_date": patent.get("patent_date"),
-            "patent_type": patent.get("patent_type"),
-            "assignee_name": (patent.get("assignees") or [{}])[0].get("assignee_organization"),
-        })
-        if limit is not None and len(records) >= limit:
-            break
+    records.extend(iter_bulk_patent_index(path, limit=limit))
     metadata = {
         "source_path": str(path),
         "source_file_sha256": hashlib.sha256(payload).hexdigest(),

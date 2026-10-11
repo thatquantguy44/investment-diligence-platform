@@ -143,6 +143,15 @@ class PostgresStorage:
                     ingested_at timestamptz NOT NULL DEFAULT now()
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.patent_enrichment_staging (
+                    source_file_sha256 text NOT NULL,
+                    patent_id text NOT NULL,
+                    abstract text,
+                    assignee_name text,
+                    PRIMARY KEY (source_file_sha256, patent_id)
+                )
+            """)
         connection.commit()
 
     def write_raw(self, capture: RawCapture) -> str:
@@ -214,6 +223,40 @@ class PostgresStorage:
             """, (metadata["source_file_sha256"], metadata["source_path"], json.dumps(metadata, default=str)))
         connection.commit()
         return len(records)
+
+    def stage_patent_enrichment(self, rows: list[dict[str, Any]], source_file_sha256: str) -> int:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for row in rows:
+                cursor.execute("""
+                    INSERT INTO diligence.patent_enrichment_staging (source_file_sha256, patent_id, abstract, assignee_name)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (source_file_sha256, patent_id) DO UPDATE SET
+                        abstract = COALESCE(EXCLUDED.abstract, diligence.patent_enrichment_staging.abstract),
+                        assignee_name = CASE
+                            WHEN EXCLUDED.assignee_name IS NULL OR EXCLUDED.assignee_name = '' THEN diligence.patent_enrichment_staging.assignee_name
+                            WHEN diligence.patent_enrichment_staging.assignee_name IS NULL OR diligence.patent_enrichment_staging.assignee_name = '' THEN EXCLUDED.assignee_name
+                            WHEN position(EXCLUDED.assignee_name in diligence.patent_enrichment_staging.assignee_name) > 0 THEN diligence.patent_enrichment_staging.assignee_name
+                            ELSE diligence.patent_enrichment_staging.assignee_name || '; ' || EXCLUDED.assignee_name
+                        END
+                """, (source_file_sha256, str(row["patent_id"]), row.get("abstract"), row.get("assignee_name")))
+        connection.commit()
+        return len(rows)
+
+    def apply_patent_enrichment(self, source_file_sha256: str) -> int:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE diligence.patent_index AS p
+                SET record = p.record || jsonb_strip_nulls(jsonb_build_object('abstract', s.abstract, 'assignee_name', s.assignee_name)),
+                    search_text = concat_ws(' ', p.record->>'title', s.abstract, s.assignee_name),
+                    ingested_at = now()
+                FROM diligence.patent_enrichment_staging AS s
+                WHERE s.source_file_sha256 = %s AND p.patent_id = s.patent_id
+            """, (source_file_sha256,))
+            updated = cursor.rowcount
+        connection.commit()
+        return updated
 
     def publish_research_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], observations: list[dict[str, Any]] | None = None, patent_records: list[dict[str, Any]] | None = None, assignments: list[dict[str, Any]] | None = None, inventor_edges: list[dict[str, Any]] | None = None, institution_edges: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
