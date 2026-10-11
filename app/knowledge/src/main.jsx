@@ -1,16 +1,38 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { graph } from './data';
+import { graph as fixtureGraph } from './data';
 import './styles.css';
 
-const nodeMap = Object.fromEntries(graph.nodes.map((node) => [node.id, node]));
+const emptyGraph = { nodes: [], edges: [] };
 
 function App() {
+  const [graph, setGraph] = useState(fixtureGraph);
+  const [mode, setMode] = useState('fixture');
+  const [apiState, setApiState] = useState('idle');
+  const [apiError, setApiError] = useState('');
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
-  const selectedNode = selected ? nodeMap[selected] : null;
   const normalizedQuery = query.trim().toLowerCase();
+  const nodeMap = useMemo(() => Object.fromEntries(graph.nodes.map((node) => [node.id, node])), [graph]);
+  const selectedNode = selected ? nodeMap[selected] : null;
+
+  useEffect(() => {
+    if (mode !== 'postgres') return;
+    let cancelled = false;
+    setApiState('loading');
+    setApiError('');
+    setGraph(emptyGraph);
+    fetch('/api/knowledge/graph?limit=120')
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || payload.error || 'API request failed');
+        return payload;
+      })
+      .then((payload) => { if (!cancelled) { setGraph(payload); setApiState('ready'); setSelected(null); } })
+      .catch((error) => { if (!cancelled) { setGraph(emptyGraph); setApiState('error'); setApiError(error.message || 'Start the local knowledge API and try again.'); } });
+    return () => { cancelled = true; };
+  }, [mode]);
 
   const visible = (node) => {
     const matchesQuery = !normalizedQuery || `${node.name} ${node.kind}`.toLowerCase().includes(normalizedQuery);
@@ -25,10 +47,15 @@ function App() {
       if (edge.b === selected) return [edge.a];
       return [];
     }));
-  }, [selected]);
+  }, [selected, graph]);
 
   const isDimmed = (node) => !visible(node) || (selected && node.id !== selected && !neighborIds.has(node.id));
   const isConnected = (edge) => selected && (edge.a === selected || edge.b === selected);
+
+  const setDataMode = (nextMode) => {
+    setMode(nextMode);
+    if (nextMode === 'fixture') { setGraph(fixtureGraph); setApiState('idle'); setApiError(''); setSelected(null); }
+  };
 
   return (
     <div className="app-shell">
@@ -38,7 +65,7 @@ function App() {
           <h1>Pipeline 01 + 02 Knowledge Graph</h1>
           <p className="subtitle">A fixture-backed prototype of identity, technology, research, and lineage signals. Every visible relationship is inspectable.</p>
         </div>
-        <div className="status"><i /> PILOT MODE · SOURCE-TRACEABLE</div>
+        <div className={`status ${mode === 'postgres' && apiState === 'ready' ? 'live' : ''}`}><i /> {mode === 'postgres' ? apiState === 'loading' ? 'CONNECTING TO POSTGRES' : apiState === 'error' ? 'POSTGRES UNAVAILABLE' : 'LIVE POSTGRES · READ ONLY' : 'FIXTURE MODE · SOURCE-TRACEABLE'}</div>
       </header>
 
       <nav className="toolbar" aria-label="Graph filters">
@@ -48,10 +75,14 @@ function App() {
           </button>
         ))}
         <button onClick={() => { setSelected(null); setQuery(''); setFilter('all'); }}>Reset focus</button>
+        <span className="mode-label">Data:</span>
+        <button className={mode === 'fixture' ? 'active' : ''} onClick={() => setDataMode('fixture')}>Embedded fixture</button>
+        <button className={mode === 'postgres' ? 'active live-button' : ''} onClick={() => setDataMode('postgres')}>Live PostgreSQL</button>
         <input value={query} onChange={(event) => setQuery(event.target.value)} className="search" type="search" placeholder="Search the evidence universe…" aria-label="Search graph nodes" />
       </nav>
 
       <main className="stage">
+        {mode === 'postgres' && apiState !== 'ready' && <div className={`connection-banner ${apiState === 'error' ? 'error' : ''}`}><strong>{apiState === 'loading' ? 'Loading live PostgreSQL graph…' : 'Live PostgreSQL is unavailable'}</strong><span>{apiState === 'error' ? apiError : 'The fixture graph is intentionally hidden while live data is loading.'}</span></div>}
         <svg viewBox="0 0 1120 590" role="img" aria-label="Interactive knowledge graph of Pipeline 01 and Pipeline 02 evidence relationships">
           <defs><radialGradient id="core"><stop offset="0" stopColor="#8c7dff" stopOpacity=".32" /><stop offset="1" stopColor="#8c7dff" stopOpacity="0" /></radialGradient></defs>
           <g className="stars">{[[34,84],[115,260],[208,74],[333,506],[530,60],[693,514],[849,78],[1032,330],[1100,545]].map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />)}</g>
@@ -79,7 +110,7 @@ function App() {
       </main>
 
       <footer className="legend">
-        <Legend color="var(--cyan)" label="Entity" /><Legend color="var(--violet)" label="Patent" /><Legend color="var(--orange)" label="Research work" /><Legend color="var(--green)" label="Institution" /><Legend color="var(--red)" label="Person" /><span className="candidate-legend">Dashed = candidate / unreviewed</span><span className="footer-note">Fixture-backed pilot · not a production score</span>
+        <Legend color="var(--cyan)" label="Entity" /><Legend color="var(--violet)" label="Patent" /><Legend color="var(--orange)" label="Research work" /><Legend color="var(--green)" label="Institution" /><Legend color="var(--red)" label="Person" /><span className="candidate-legend">Dashed = candidate / unreviewed</span><span className="footer-note">{mode === 'postgres' ? 'PostgreSQL · read only' : 'Embedded fixture · not a production score'}</span>
       </footer>
     </div>
   );
