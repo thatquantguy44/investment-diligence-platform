@@ -40,6 +40,16 @@ class LocalStorage:
         self.write_jsonl("indexes/uspto_patents/index_runs.jsonl", [metadata])
         return len(records)
 
+    def record_uspto_odp_discovery(self, report: dict) -> str:
+        """Persist the latest catalog snapshot and retain discovery history."""
+        latest = self.root / "indexes/uspto_patents/odp_discovery.json"
+        latest.parent.mkdir(parents=True, exist_ok=True)
+        latest.write_text(json.dumps(report, indent=2) + "\n")
+        history = self.root / "indexes/uspto_patents/odp_discovery_history.jsonl"
+        with history.open("a") as destination:
+            destination.write(json.dumps(report, default=str) + "\n")
+        return str(latest)
+
     def search_patent_index(self, query: str, limit: int = 25) -> list[dict]:
         path = self.root / "indexes/uspto_patents/patent_index.jsonl"
         if not path.exists():
@@ -70,4 +80,11 @@ class LocalStorage:
         self.write_jsonl(f"curated/02_technology_talent/{run_id}/inventor_edges.jsonl", inventor_edges or [])
         self.write_jsonl(f"curated/02_technology_talent/{run_id}/institution_edges.jsonl", institution_edges or [])
         self.write_jsonl(f"curated/02_technology_talent/{run_id}/product_manifest.jsonl", [product])
+        return str(output)
+
+    def publish_trade_product(self, run_id: str, records: list[dict], product: dict, outputs: dict[str, list[dict]]) -> str:
+        output = self.write_jsonl(f"curated/03_trade_exposure/{run_id}/trade_flows.jsonl", records)
+        for name, rows in outputs.items():
+            self.write_jsonl(f"curated/03_trade_exposure/{run_id}/{name}.jsonl", rows)
+        self.write_jsonl(f"curated/03_trade_exposure/{run_id}/product_manifest.jsonl", [product])
         return str(output)

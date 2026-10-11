@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,11 +11,13 @@ from pathlib import Path
 import yaml
 
 from diligence_pipelines.contracts import Entity
-from diligence_pipelines.quality import validate_entities, validate_patent_records, validate_research_works
+from diligence_pipelines.docs_validation import validate_docs
+from diligence_pipelines.quality import validate_entities, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, download_bulk_artifact, enrich_bulk_patents, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, search_odp_products, select_catalog_artifact
+from diligence_pipelines.sources import RawCapture, SourceRequest, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact
 from diligence_pipelines.storage import build_storage
 from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
+from diligence_pipelines.trade import coverage_report, derive_trade_outputs
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,12 +61,107 @@ def search_uspto_odp(query: str, output: Path | None, settings: Settings) -> int
     return 0
 
 
+def discover_uspto_odp(query: str | None, output: Path | None, fixture: Path | None, settings: Settings) -> int:
+    """Poll the ODP catalog and persist a release-candidate snapshot."""
+    product_query = (query or settings.uspto_odp_product_query).strip()
+    if fixture:
+        payload = fixture.read_bytes()
+        catalog_uri = str(fixture)
+    else:
+        if not settings.uspto_api_key:
+            raise SystemExit("USPTO_API_KEY is required for live ODP release discovery")
+        payload = search_odp_products(product_query, settings.uspto_api_key, settings.uspto_odp_catalog_url)
+        catalog_uri = settings.uspto_odp_catalog_url
+    discovered_at = datetime.now(timezone.utc).isoformat()
+    report = {
+        "discovery_id": str(uuid.uuid4()),
+        "status": "discovered",
+        "discovered_at": discovered_at,
+        "product_query": product_query,
+        "catalog_uri": catalog_uri,
+        "catalog_sha256": hashlib.sha256(payload).hexdigest(),
+        "candidates": discover_catalog_artifacts(payload, product_query),
+    }
+    report["candidate_count"] = len(report["candidates"])
+    destination = output or settings.uspto_odp_discovery_output
+    if not destination.is_absolute() and output is not None:
+        destination = settings.data_root / destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n")
+    storage = build_storage(settings)
+    storage.record_uspto_odp_discovery(report)
+    print(json.dumps({"status": "discovered", "output": str(destination), "candidate_count": report["candidate_count"], "catalog_sha256": report["catalog_sha256"]}, indent=2))
+    return 0
+
+
 def select_uspto_odp(catalog: Path, contains: str, output: Path) -> int:
     selection = select_catalog_artifact(catalog.read_bytes(), contains)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(selection, indent=2) + "\n")
     print(json.dumps({"status": "selected", "output": str(output), "download_url": selection["download_url"]}, indent=2))
     return 0
+
+
+def review_uspto_odp(discovery: Path, candidate_index: int, reviewer: str, note: str, output: Path) -> int:
+    selection = review_catalog_artifact(json.loads(discovery.read_text()), candidate_index=candidate_index, reviewer=reviewer, note=note)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(selection, indent=2) + "\n")
+    print(json.dumps({"status": selection["status"], "output": str(output), "download_url": selection["download_url"], "reviewer": reviewer}, indent=2))
+    return 0
+
+
+def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, report_output: Path | None, quality_output: Path | None, max_age_days: int | None, max_examples: int, settings: Settings) -> int:
+    """Prepare a reviewed ODP release without changing the indexed database."""
+    approval = json.loads(selection.read_text())
+    if approval.get("status") != "approved_for_download":
+        raise SystemExit("ODP selection must have status approved_for_download")
+    url = approval.get("download_url")
+    if not isinstance(url, str):
+        raise SystemExit("ODP selection is missing download_url")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temp_handle = tempfile.NamedTemporaryFile(prefix=".odp-download-", suffix=output.suffix, dir=output.parent, delete=False)
+    temp_path = Path(temp_handle.name)
+    temp_handle.close()
+    try:
+        artifact = download_bulk_artifact(url, temp_path, api_key=settings.uspto_api_key)
+        new_sha = artifact.content_sha256
+        existing_sha = None
+        sidecar = Path(str(output) + ".json")
+        if sidecar.exists():
+            existing_sha = json.loads(sidecar.read_text()).get("content_sha256")
+        changed = existing_sha != new_sha or not output.exists()
+        if changed:
+            temp_path.replace(output)
+            Path(str(temp_path) + ".json").unlink(missing_ok=True)
+            sidecar.write_text(json.dumps({**artifact.__dict__, "path": str(output)}, indent=2) + "\n")
+        else:
+            temp_path.unlink(missing_ok=True)
+            Path(str(temp_path) + ".json").unlink(missing_ok=True)
+        quality = profile_bulk_release(output, max_age_days=max_age_days)
+        previous_quality = profile_bulk_release(previous, max_age_days=max_age_days) if previous and previous.exists() and changed else None
+        diff = compare_bulk_releases(previous, output, max_examples=max_examples) if previous and previous.exists() and changed else None
+        report = {
+            "status": "prepared" if quality["status"] == "pass" else "blocked",
+            "prepared_at": datetime.now(timezone.utc).isoformat(),
+            "selection": approval,
+            "artifact": {**artifact.__dict__, "path": str(output), "changed": changed},
+            "quality": quality,
+            "previous_quality": previous_quality,
+            "diff": diff,
+            "ingestion_status": "not_started",
+            "ingestion_command": f"PYTHONPATH=src python -m diligence_pipelines.cli ingest-uspto-bulk --patent-file {output}",
+        }
+        report_path = report_output or Path(str(output) + ".refresh.json")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        if quality_output:
+            quality_output.parent.mkdir(parents=True, exist_ok=True)
+            quality_output.write_text(json.dumps(quality, indent=2) + "\n")
+        print(json.dumps({"status": report["status"], "output": str(output), "changed": changed, "report": str(report_path), "ingestion_status": "not_started"}, indent=2))
+        return 0 if report["status"] == "prepared" else 2
+    finally:
+        temp_path.unlink(missing_ok=True)
+        Path(str(temp_path) + ".json").unlink(missing_ok=True)
 
 
 def index_uspto_bulk(path: Path, limit: int | None, settings: Settings) -> int:
@@ -315,20 +414,75 @@ def run_technology_talent(query: str, max_results: int, openalex_fixture: Path |
     return 0
 
 
+def run_trade_exposure(period: str, reporter_code: str, partner_code: str, flow_code: str, hs_codes: list[str], trade_fixture: Path | None, settings: Settings) -> int:
+    run_id = str(uuid.uuid4())
+    storage = build_storage(settings)
+    if trade_fixture:
+        capture = load_comtrade_fixture(trade_fixture.read_bytes(), source_uri=trade_fixture.resolve().as_uri())
+    else:
+        capture = fetch_comtrade(period=period, reporter_code=reporter_code, partner_code=partner_code, flow_code=flow_code, hs_codes=hs_codes, api_key=settings.comtrade_api_key, api_url=settings.comtrade_api_url)
+    raw_uri = storage.write_raw(capture)
+    source_record_id = f"source:{capture.content_sha256}"
+    records = normalize_trade_flows(capture.payload, run_id, source_record_id, set(hs_codes) if hs_codes else None)
+    outputs = derive_trade_outputs(records)
+    coverage = coverage_report(records, outputs, set(hs_codes) if hs_codes else None)
+    quality = validate_trade_flows(records, coverage)
+    failed = [result for result in quality if result.status == "fail"]
+    if failed:
+        print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))
+        return 2
+    product = {
+        "product_id": "trade_exposure",
+        "contract_version": "1.0.0",
+        "materialization_id": run_id,
+        "pipeline_id": "03_trade_exposure",
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "partition_keys": {"reporter_code": reporter_code, "period": period, "hs_codes": hs_codes, "flow_code": flow_code},
+        "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": source_record_id},
+        "location": f"storage://curated/03_trade_exposure/{run_id}/trade_flows",
+        "quality": [item.model_dump(mode="json") for item in quality],
+        "coverage": coverage,
+        "record_counts": {"trade_flows": len(records), **{name: len(rows) for name, rows in outputs.items()}},
+        "limitations": coverage["limitations"],
+    }
+    storage.publish_trade_product(run_id, records, product, outputs)
+    print(json.dumps({"run_id": run_id, "status": "published", **product["record_counts"], "coverage": coverage}, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="diligence-pipelines")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate-manifests")
+    subparsers.add_parser("validate-docs")
     download_parser = subparsers.add_parser("download-uspto-bulk")
     download_parser.add_argument("--url", required=True, help="Official USPTO ODP artifact URL")
     download_parser.add_argument("--output", type=Path, required=True, help="Local artifact path")
     catalog_parser = subparsers.add_parser("search-uspto-odp")
     catalog_parser.add_argument("--query", required=True, help="ODP product title query")
     catalog_parser.add_argument("--output", type=Path, help="Optional JSON output path")
+    discover_parser = subparsers.add_parser("discover-uspto-odp")
+    discover_parser.add_argument("--query", help="ODP product title query; defaults to USPTO_ODP_PRODUCT_QUERY")
+    discover_parser.add_argument("--output", type=Path, help="Discovery snapshot path; defaults to USPTO_ODP_DISCOVERY_OUTPUT")
+    discover_parser.add_argument("--catalog-fixture", type=Path, help="Offline catalog JSON for deterministic testing")
     select_parser = subparsers.add_parser("select-uspto-odp")
     select_parser.add_argument("--catalog", type=Path, required=True, help="Catalog JSON returned by search-uspto-odp")
     select_parser.add_argument("--contains", required=True, help="Text that must identify exactly one catalog item/file")
     select_parser.add_argument("--output", type=Path, required=True, help="Selection manifest path")
+    review_parser = subparsers.add_parser("review-uspto-odp")
+    review_parser.add_argument("--discovery", type=Path, required=True, help="Discovery snapshot returned by discover-uspto-odp")
+    review_parser.add_argument("--candidate-index", type=int, required=True, help="Zero-based candidate index from the discovery snapshot")
+    review_parser.add_argument("--reviewer", required=True)
+    review_parser.add_argument("--note", required=True, help="Human review rationale")
+    review_parser.add_argument("--output", type=Path, required=True, help="Reviewed selection manifest path")
+    refresh_parser = subparsers.add_parser("refresh-uspto-odp")
+    refresh_parser.add_argument("--selection", type=Path, required=True, help="Reviewed selection manifest")
+    refresh_parser.add_argument("--output", type=Path, required=True, help="Local artifact path")
+    refresh_parser.add_argument("--previous-file", type=Path, help="Previous artifact for release diff reporting")
+    refresh_parser.add_argument("--report-output", type=Path, help="Refresh report path")
+    refresh_parser.add_argument("--quality-output", type=Path, help="Quality report path")
+    refresh_parser.add_argument("--max-age-days", type=int, help="Fail freshness check when latest patent date is older than this")
+    refresh_parser.add_argument("--max-examples", type=int, default=100, help="Maximum new/changed/removed IDs retained in the diff report")
     patent_search_parser = subparsers.add_parser("search-uspto-index")
     patent_search_parser.add_argument("--query", required=True)
     patent_search_parser.add_argument("--limit", type=int, default=25)
@@ -357,15 +511,29 @@ def main() -> int:
     run_parser.add_argument("--patent-fixture", type=Path, help="Synthetic USPTO response for offline Pipeline 02 tests")
     run_parser.add_argument("--patent-bulk-file", type=Path, help="Downloaded USPTO ODP bulk file (JSON, JSONL, CSV, or ZIP) to search locally")
     run_parser.add_argument("--patent-source", choices=("auto", "index", "api"), default="auto", help="Patent source; auto uses PostgreSQL index when configured")
+    run_parser.add_argument("--period", help="Pipeline 03 annual period, e.g. 2024")
+    run_parser.add_argument("--reporter-code", help="Pipeline 03 Comtrade reporter code")
+    run_parser.add_argument("--partner-code", default="0", help="Pipeline 03 Comtrade partner code")
+    run_parser.add_argument("--flow-code", default="M,X", help="Pipeline 03 Comtrade flow codes")
+    run_parser.add_argument("--hs-code", action="append", default=[], help="Pipeline 03 HS code; repeat for a sector basket")
+    run_parser.add_argument("--trade-fixture", type=Path, help="Synthetic UN Comtrade response for offline Pipeline 03 tests")
     args = parser.parse_args()
     if args.command == "validate-manifests":
         return validate_manifests()
+    if args.command == "validate-docs":
+        return validate_docs(ROOT)
     if args.command == "download-uspto-bulk":
         return download_uspto_bulk(args.url, args.output, Settings.from_env())
     if args.command == "search-uspto-odp":
         return search_uspto_odp(args.query, args.output, Settings.from_env())
+    if args.command == "discover-uspto-odp":
+        return discover_uspto_odp(args.query, args.output, args.catalog_fixture, Settings.from_env())
     if args.command == "select-uspto-odp":
         return select_uspto_odp(args.catalog, args.contains, args.output)
+    if args.command == "review-uspto-odp":
+        return review_uspto_odp(args.discovery, args.candidate_index, args.reviewer, args.note, args.output)
+    if args.command == "refresh-uspto-odp":
+        return refresh_uspto_odp(args.selection, args.output, args.previous_file, args.report_output, args.quality_output, args.max_age_days, args.max_examples, Settings.from_env())
     if args.command == "search-uspto-index":
         return search_uspto_index(args.query, args.limit, Settings.from_env())
     if args.command == "index-uspto-bulk":
@@ -378,6 +546,10 @@ def main() -> int:
         if not args.query or args.input or args.cik or args.watchlist:
             parser.error("Pipeline 02 requires --query and does not accept Pipeline 01 inputs")
         return run_technology_talent(args.query, args.max_results, args.openalex_fixture, args.patent_fixture, args.patent_bulk_file, args.patent_source, Settings.from_env())
+    if args.pipeline_id == "03_trade_exposure":
+        if not args.period or not args.reporter_code or args.input or args.cik or args.watchlist or args.query:
+            parser.error("Pipeline 03 requires --period and --reporter-code and does not accept Pipeline 01/02 inputs")
+        return run_trade_exposure(args.period, args.reporter_code, args.partner_code, args.flow_code, args.hs_code, args.trade_fixture, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
         parser.error("Implemented pipelines are 01_entity_graph and 02_technology_talent")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:

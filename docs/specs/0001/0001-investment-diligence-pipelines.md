@@ -6,6 +6,8 @@
 **Owner:** Quantitative diligence / data engineering  
 **Last updated:** 2026-10-10
 
+**Roadmap:** [ROADMAP.md](ROADMAP.md) | [Master roadmap](../../MASTER_ROADMAP.md)
+
 ## 1. Purpose
 
 Create a modular upstream repository for collecting, validating, linking, and publishing data products that support investment diligence on early-stage companies and their surrounding markets, with an initial focus on China and Southeast Asia.

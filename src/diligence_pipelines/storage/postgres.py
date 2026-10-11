@@ -144,12 +144,57 @@ class PostgresStorage:
                 )
             """)
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.uspto_odp_discoveries (
+                    discovery_id uuid PRIMARY KEY,
+                    catalog_sha256 text NOT NULL,
+                    product_query text NOT NULL,
+                    report jsonb NOT NULL,
+                    discovered_at timestamptz NOT NULL DEFAULT now()
+                )
+            """)
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS diligence.patent_enrichment_staging (
                     source_file_sha256 text NOT NULL,
                     patent_id text NOT NULL,
                     abstract text,
                     assignee_name text,
                     PRIMARY KEY (source_file_sha256, patent_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.trade_flows (
+                    trade_flow_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (trade_flow_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.product_country_exposure (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (record_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.partner_concentration (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (record_id, run_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.mirror_trade_discrepancies (
+                    record_id text NOT NULL,
+                    run_id uuid NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (record_id, run_id)
                 )
             """)
         connection.commit()
@@ -224,6 +269,24 @@ class PostgresStorage:
         connection.commit()
         return len(records)
 
+    def record_uspto_odp_discovery(self, report: dict) -> str:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO diligence.uspto_odp_discoveries
+                    (discovery_id, catalog_sha256, product_query, report, discovered_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (discovery_id) DO NOTHING
+            """, (
+                report["discovery_id"],
+                report["catalog_sha256"],
+                report["product_query"],
+                json.dumps(report, default=str),
+                report["discovered_at"],
+            ))
+        connection.commit()
+        return f"postgresql://diligence/uspto_odp_discoveries/{report['discovery_id']}"
+
     def stage_patent_enrichment(self, rows: list[dict[str, Any]], source_file_sha256: str) -> int:
         connection = self._connect()
         with connection.cursor() as cursor:
@@ -293,6 +356,36 @@ class PostgresStorage:
                 """, (patent["patent_id"], run_id, json.dumps(patent, default=str)))
             for table, rows in (("patent_assignments", assignments), ("inventor_edges", inventor_edges), ("institution_edges", institution_edges)):
                 for row in rows or []:
+                    cursor.execute(f"""
+                        INSERT INTO diligence.{table} (record_id, run_id, record)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (record_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                    """, (row["record_id"], run_id, json.dumps(row, default=str)))
+            cursor.execute("""
+                INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (materialization_id) DO NOTHING
+            """, (run_id, product["product_id"], product["pipeline_id"], json.dumps(product, default=str)))
+        connection.commit()
+        return f"postgresql://diligence/product_manifests/{run_id}"
+
+    def publish_trade_product(self, run_id: str, records: list[dict[str, Any]], product: dict[str, Any], outputs: dict[str, list[dict[str, Any]]]) -> str:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for record in records:
+                cursor.execute("""
+                    INSERT INTO diligence.trade_flows (trade_flow_id, run_id, record)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (trade_flow_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (record["trade_flow_id"], run_id, json.dumps(record, default=str)))
+            table_by_output = {
+                "product_country_exposure": "product_country_exposure",
+                "partner_concentration": "partner_concentration",
+                "mirror_trade_discrepancies": "mirror_trade_discrepancies",
+            }
+            for output_name, rows in outputs.items():
+                table = table_by_output[output_name]
+                for row in rows:
                     cursor.execute(f"""
                         INSERT INTO diligence.{table} (record_id, run_id, record)
                         VALUES (%s, %s, %s)

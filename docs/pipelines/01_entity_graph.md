@@ -2,6 +2,8 @@
 
 This pilot canonicalizes a bounded local input file or SEC EDGAR watchlist into `entities` and publishes a product manifest. Optional LEIs trigger GLEIF captures and exact-LEI aliases.
 
+See the source runbooks for [SEC EDGAR](../sources/sec_edgar.md) and [GLEIF](../sources/gleif.md).
+
 ## Direct run
 
 ```bash

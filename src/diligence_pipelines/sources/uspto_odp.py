@@ -12,6 +12,8 @@ from urllib.request import Request, urlopen
 
 import certifi
 
+from diligence_pipelines.sources.base import open_url_with_retries
+
 
 DEFAULT_ODP_CATALOG_URL = "https://api.uspto.gov/api/v1/datasets/products/search"
 DOWNLOAD_KEYS = {"url", "downloadurl", "filedownloaduri", "downloaduri", "fileurl", "download_url", "file_download_uri"}
@@ -25,6 +27,40 @@ class BulkArtifact:
     content_sha256: str
     size_bytes: int
     status_code: int
+
+
+def discover_catalog_artifacts(payload: bytes, query: str) -> list[dict]:
+    """Return all downloadable catalog artifacts matching a product query.
+
+    Discovery is intentionally broader than ``select_catalog_artifact``: a
+    release poll should record new candidates for review, not guess which
+    release is safe to ingest.
+    """
+    data = json.loads(payload)
+    needle = query.casefold().strip()
+    if not needle:
+        raise ValueError("ODP product query must not be empty")
+    candidates: list[dict] = []
+    seen_urls: set[str] = set()
+    for item, context in _walk_dicts(data):
+        urls = [
+            str(value)
+            for key, value in item.items()
+            if key.casefold().replace("-", "_") in DOWNLOAD_KEYS
+            and isinstance(value, str)
+            and value.startswith(("https://", "http://"))
+        ]
+        if not urls:
+            continue
+        text = f"{context} {json.dumps(item, sort_keys=True)}".casefold()
+        if needle not in text:
+            continue
+        for url in urls:
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            candidates.append({"source": item, "download_url": url})
+    return candidates
 
 
 def _walk_dicts(value: object, context: str = ""):
@@ -59,21 +95,84 @@ def select_catalog_artifact(payload: bytes, contains: str) -> dict:
     return candidates[0]
 
 
-def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CATALOG_URL) -> bytes:
+def _next_page(value: object) -> str | None:
+    if isinstance(value, dict):
+        for key in ("next", "nextPage", "next_page", "nextLink", "next_link"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.startswith(("https://", "http://")):
+                return candidate
+        for child in value.values():
+            found = _next_page(child)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _next_page(child)
+            if found:
+                return found
+    return None
+
+
+def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CATALOG_URL, max_pages: int = 20) -> bytes:
     if not query.strip():
         raise ValueError("ODP product query must not be empty")
     if not api_key:
         raise ValueError("USPTO_API_KEY is required for ODP catalog access")
+    if max_pages < 1:
+        raise ValueError("max_pages must be at least 1")
     uri = f"{api_url}?{urlencode({'productTitle': query})}"
-    request = Request(uri, headers={"X-Api-Key": api_key, "Accept": "application/json", "User-Agent": "investment-diligence-pipelines/0.1"})
     context = ssl.create_default_context(cafile=certifi.where())
-    try:
-        with urlopen(request, timeout=60, context=context) as response:
-            return response.read()
-    except HTTPError as exc:
-        raise RuntimeError(f"USPTO ODP catalog returned HTTP {exc.code}: {uri}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Unable to reach USPTO ODP catalog {uri}: {exc.reason}") from exc
+    pages: list[object] = []
+    for _ in range(max_pages):
+        request = Request(uri, headers={"X-Api-Key": api_key, "Accept": "application/json", "User-Agent": "investment-diligence-pipelines/0.1"})
+        try:
+            with open_url_with_retries(request, timeout=60, context=context) as response:
+                payload = response.read()
+        except HTTPError as exc:
+            raise RuntimeError(f"USPTO ODP catalog returned HTTP {exc.code}: {uri}") from exc
+        except URLError as exc:
+            raise RuntimeError(f"Unable to reach USPTO ODP catalog {uri}: {exc.reason}") from exc
+        page = json.loads(payload)
+        pages.append(page)
+        uri = _next_page(page)
+        if not uri:
+            break
+    if len(pages) == 1:
+        return json.dumps(pages[0], separators=(",", ":")).encode()
+    if all(isinstance(page, dict) for page in pages):
+        merged = dict(pages[0])
+        for key in ("products", "data", "results", "items"):
+            values = [page.get(key) for page in pages if isinstance(page.get(key), list)]
+            if values:
+                merged[key] = [item for group in values for item in group]
+                break
+        merged["_pagination"] = {"pages_fetched": len(pages), "max_pages": max_pages}
+        return json.dumps(merged, separators=(",", ":")).encode()
+    return json.dumps({"pages": pages, "_pagination": {"pages_fetched": len(pages), "max_pages": max_pages}}, separators=(",", ":")).encode()
+
+
+def review_catalog_artifact(discovery: dict, *, candidate_index: int, reviewer: str, note: str) -> dict:
+    """Create an explicit human-review record from a discovery snapshot."""
+    if not reviewer.strip():
+        raise ValueError("reviewer must not be empty")
+    if not note.strip():
+        raise ValueError("review note must not be empty")
+    candidates = discovery.get("candidates")
+    if not isinstance(candidates, list) or not 0 <= candidate_index < len(candidates):
+        raise ValueError("candidate_index does not identify a discovered ODP artifact")
+    candidate = candidates[candidate_index]
+    return {
+        "status": "approved_for_download",
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "reviewer": reviewer,
+        "review_note": note,
+        "discovery_id": discovery.get("discovery_id"),
+        "catalog_sha256": discovery.get("catalog_sha256"),
+        "product_query": discovery.get("product_query"),
+        "candidate_index": candidate_index,
+        "source": candidate.get("source", {}),
+        "download_url": candidate.get("download_url"),
+    }
 
 
 def download_bulk_artifact(url: str, output_path: Path, api_key: str | None = None) -> BulkArtifact:

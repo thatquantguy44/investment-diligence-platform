@@ -6,6 +6,8 @@
 **Owner:** Quantitative diligence / data engineering  
 **Last updated:** 2026-10-10
 
+**Roadmap:** [ROADMAP.md](ROADMAP.md) | [Master roadmap](../../MASTER_ROADMAP.md)
+
 ## 1. Purpose
 
 Add two bounded public-data capabilities to the investment diligence pipeline platform:

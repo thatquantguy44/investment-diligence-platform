@@ -2,6 +2,8 @@
 
 The pilot combines OpenAlex research metadata with a USPTO/PatentsView patent response to create `research_works`, `patent_records`, `patent_assignments`, `inventor_edges`, `institution_edges`, and deterministic `technology_topic_observations`. It is intentionally not an employment or technology-quality classifier.
 
+See the source runbooks for [OpenAlex](../sources/openalex.md) and [USPTO ODP / PatentsView](../sources/uspto_odp.md).
+
 Publication now quality-checks both research works and patent records for required identifiers, source references, duplicate IDs, and empty-result warnings before materialization.
 
 Source requests use bounded retries for transient transport failures and HTTP 429/5xx responses. Set `OPENALEX_EMAIL` optionally to identify the client; OpenAlex does not require an API key.

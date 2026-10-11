@@ -27,3 +27,10 @@ USPTO_API_URL: "https://search.patentsview.org/api/v1/patent/"
 USPTO_BULK_DATA_URL: ""
 # Current ODP catalog endpoint; use only with an ODP-compatible USPTO API key.
 USPTO_ODP_CATALOG_URL: "https://api.uspto.gov/api/v1/datasets/products/search"
+# Used by scheduled discovery; discovery does not download or ingest.
+USPTO_ODP_PRODUCT_QUERY: "PatentsView granted patent disambiguated"
+USPTO_ODP_DISCOVERY_OUTPUT: ".data/uspto/odp_discovery.json"
+
+# Optional UN Comtrade connector settings for Pipeline 03.
+COMTRADE_API_KEY: ""
+COMTRADE_API_URL: "https://comtradeapi.un.org/public/v1/preview/C/A/HS"

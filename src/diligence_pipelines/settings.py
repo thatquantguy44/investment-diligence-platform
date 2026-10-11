@@ -23,6 +23,10 @@ class Settings:
     uspto_api_key: str | None = None
     uspto_api_url: str = "https://search.patentsview.org/api/v1/patent/"
     uspto_odp_catalog_url: str = "https://api.uspto.gov/api/v1/datasets/products/search"
+    uspto_odp_product_query: str = "PatentsView granted patent disambiguated"
+    uspto_odp_discovery_output: Path = Path(".data/uspto/odp_discovery.json")
+    comtrade_api_key: str | None = None
+    comtrade_api_url: str = "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -56,4 +60,8 @@ class Settings:
             uspto_api_key=value("USPTO_API_KEY", "") or None,
             uspto_api_url=value("USPTO_API_URL", "https://search.patentsview.org/api/v1/patent/"),
             uspto_odp_catalog_url=value("USPTO_ODP_CATALOG_URL", "https://api.uspto.gov/api/v1/datasets/products/search"),
+            uspto_odp_product_query=value("USPTO_ODP_PRODUCT_QUERY", "PatentsView granted patent disambiguated"),
+            uspto_odp_discovery_output=Path(value("USPTO_ODP_DISCOVERY_OUTPUT", ".data/uspto/odp_discovery.json")),
+            comtrade_api_key=value("COMTRADE_API_KEY", "") or None,
+            comtrade_api_url=value("COMTRADE_API_URL", "https://comtradeapi.un.org/public/v1/preview/C/A/HS"),
         )

@@ -1,0 +1,6 @@
+{"data":[
+  {"period":"2024","reporterCode":"842","reporterDesc":"United States","partnerCode":"156","partnerDesc":"China","flowCode":"X","flowDesc":"Export","cmdCode":"850760","cmdDesc":"Lithium-ion accumulators","primaryValue":1000000},
+  {"period":"2024","reporterCode":"842","reporterDesc":"United States","partnerCode":"276","partnerDesc":"Germany","flowCode":"X","flowDesc":"Export","cmdCode":"850760","cmdDesc":"Lithium-ion accumulators","primaryValue":500000},
+  {"period":"2024","reporterCode":"156","reporterDesc":"China","partnerCode":"842","partnerDesc":"United States","flowCode":"M","flowDesc":"Import","cmdCode":"850760","cmdDesc":"Lithium-ion accumulators","primaryValue":800000},
+  {"period":"2024","reporterCode":"276","reporterDesc":"Germany","partnerCode":"842","partnerDesc":"United States","flowCode":"M","flowDesc":"Import","cmdCode":"850760","cmdDesc":"Lithium-ion accumulators","primaryValue":450000}
+]}
