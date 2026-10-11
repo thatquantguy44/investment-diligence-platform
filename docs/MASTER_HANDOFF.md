@@ -36,6 +36,11 @@ The adapter creates a `diligence` schema in the configured database:
 - `diligence.raw_captures`: append-only source payloads and retrieval metadata.
 - `diligence.entities`: normalized entity records keyed by entity and run.
 - `diligence.product_manifests`: product identity, contract version, materialization, quality, and lineage.
+- `diligence.patent_index`: searchable USPTO ODP bulk-release snapshot.
+- `diligence.patent_catalog`: deduplicated canonical patent view keyed by
+  `patent_id`.
+- `diligence.patent_records`: run-scoped Pipeline 02 evidence keyed by
+  `(patent_id, run_id)`.
 
 ## Local variables and secrets
 
@@ -90,13 +95,23 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 
 ## Recommended next work
 
-1. Add SEC retry/backoff tests, HTTP error fixtures, and a reviewed source-policy record.
-2. Add SEC XBRL facts and ownership relationships if Pipeline 01 needs deeper graph coverage.
-3. Add a normalized `source_records` table if downstream consumers need SQL joins over raw metadata.
-4. Add a consumer adapter that reads product manifests by `product_id`, `contract_version`, and `materialization_id`.
+1. Confirm the full USPTO bulk ingestion has finished, then run
+   `materialize-patent-catalog` against the completed `patent_index`.
+2. Validate the deduplicated catalog count against the full index and confirm
+   repeated Pipeline 02 runs do not increase canonical patent counts.
+3. For Pipeline 03, approve one reporter country and one HS basket in the
+   approval worksheet before broader live collection.
+4. Load and validate Comtrade primary/secondary keys without exposing them;
+   preview access currently works anonymously.
 5. Add migrations before the PostgreSQL schema is used outside local development.
-6. Continue with Pipeline 02 using the handoff in [`HANDOFF.md`](specs/0001/HANDOFF.md).
+6. Keep Spec 0003 (WIFO/CNIPA) at placeholder status until a concrete dataset
+   and diligence question are selected.
 
 ## Current validation result
 
-The repository’s local test suite passes with nine tests. Manifest validation passes. The three-company live SEC watchlist smoke test published successfully to PostgreSQL `IDP`.
+The repository’s local test suite passes with 45 tests. Manifest and
+documentation validation pass. Pipeline 03 live preview validation returned
+two USA lithium-ion battery records for 2024 with zero configured-HS-code
+missingness; no data was written by the validation command. The full USPTO
+release ingestion should be checked before running the catalog materialization
+step above.

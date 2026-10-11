@@ -2,6 +2,15 @@
 
 The pilot combines OpenAlex research metadata with a USPTO/PatentsView patent response to create `research_works`, `patent_records`, `patent_assignments`, `inventor_edges`, `institution_edges`, and deterministic `technology_topic_observations`. It is intentionally not an employment or technology-quality classifier.
 
+When PostgreSQL is configured, Pipeline 02 queries the real USPTO bulk-backed
+`diligence.patent_index`. Its run output remains in `diligence.patent_records`
+for reproducibility. The deduplicated cross-run view is
+`diligence.patent_catalog`; backfill it after a completed bulk load with:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli materialize-patent-catalog
+```
+
 See the source runbooks for [OpenAlex](../sources/openalex.md) and [USPTO ODP / PatentsView](../sources/uspto_odp.md).
 
 Publication now quality-checks both research works and patent records for required identifiers, source references, duplicate IDs, and empty-result warnings before materialization.

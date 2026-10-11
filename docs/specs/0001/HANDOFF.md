@@ -9,9 +9,15 @@ Spec 0001 is implemented through a working pilot foundation:
   PostgreSQL `IDP`.
 - Pipeline 02 combines OpenAlex research metadata with a local USPTO ODP-backed
   patent index. It publishes research works, patents, assignments, inventor
-  edges, institution edges, and topic observations.
+  edges, institution edges, and topic observations. The canonical
+  `diligence.patent_catalog` table is separate from run-scoped
+  `diligence.patent_records` and can be backfilled with
+  `materialize-patent-catalog` after the full index load completes.
 - Pipeline 03 has a bounded UN Comtrade-compatible trade exposure slice with
-  explicit coverage and missingness reporting.
+  explicit coverage and missingness reporting. Its follow-on slice now includes
+  a read-only `validate-comtrade` command and source-vintage/revision metadata
+  capture. Live preview validation passes; country/sector approval and
+  authenticated account coverage remain open.
 - The knowledge application can read the configured PostgreSQL graph or use
   embedded fixtures.
 
@@ -42,12 +48,15 @@ are documented in [`docs/sources/uspto_odp.md`](../../sources/uspto_odp.md).
 
 ## Next work
 
-The next active work is Pipeline 02 operational hardening:
+The next active work is to finish Pipeline 02 materialization and approve the
+bounded Pipeline 03 scope:
 
-- Reviewed artifact selection and checksum-aware download/ingest orchestration.
-- Schema-drift, freshness, coverage, and missingness checks.
-- Pagination, rate-limit, and HTTP replay tests.
-- Release diff reporting and controlled PostgreSQL refresh.
+- Confirm the full USPTO ingestion has completed.
+- Run `PYTHONPATH=src python -m diligence_pipelines.cli materialize-patent-catalog`.
+- Validate canonical counts and repeat-run deduplication.
+- Select and review one Pipeline 03 reporter country and one HS sector basket
+  in [`docs/pipelines/03_trade_exposure.md`](../../pipelines/03_trade_exposure.md).
+- Confirm Comtrade primary/secondary key loading; never commit key values.
 
 The following are deliberately lower priority and deferred:
 

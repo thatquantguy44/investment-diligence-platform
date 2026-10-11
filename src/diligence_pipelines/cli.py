@@ -14,7 +14,7 @@ from diligence_pipelines.contracts import Entity
 from diligence_pipelines.docs_validation import validate_docs
 from diligence_pipelines.quality import validate_entities, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact
+from diligence_pipelines.sources import RawCapture, SourceRequest, comtrade_response_metadata, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact
 from diligence_pipelines.storage import build_storage
 from diligence_pipelines.technology import derive_institution_edges, derive_topic_observation
 from diligence_pipelines.trade import coverage_report, derive_trade_outputs
@@ -176,6 +176,16 @@ def search_uspto_index(query: str, limit: int, settings: Settings) -> int:
     storage = build_storage(settings)
     results = storage.search_patent_index(query, limit=limit)
     print(json.dumps({"query": query, "count": len(results), "results": results}, indent=2))
+    return 0
+
+
+def materialize_patent_catalog(settings: Settings) -> int:
+    """Backfill the deduplicated patent catalog from the loaded USPTO index."""
+    storage = build_storage(settings)
+    if not hasattr(storage, "materialize_patent_catalog"):
+        raise SystemExit("Selected storage backend does not support patent catalog materialization")
+    count = storage.materialize_patent_catalog()
+    print(json.dumps({"status": "materialized", "patent_catalog_rows": count}, indent=2))
     return 0
 
 
@@ -420,13 +430,14 @@ def run_trade_exposure(period: str, reporter_code: str, partner_code: str, flow_
     if trade_fixture:
         capture = load_comtrade_fixture(trade_fixture.read_bytes(), source_uri=trade_fixture.resolve().as_uri())
     else:
-        capture = fetch_comtrade(period=period, reporter_code=reporter_code, partner_code=partner_code, flow_code=flow_code, hs_codes=hs_codes, api_key=settings.comtrade_api_key, api_url=settings.comtrade_api_url)
+        capture = fetch_comtrade(period=period, reporter_code=reporter_code, partner_code=partner_code, flow_code=flow_code, hs_codes=hs_codes, api_keys=settings.comtrade_api_keys, api_url=settings.comtrade_api_url)
     raw_uri = storage.write_raw(capture)
     source_record_id = f"source:{capture.content_sha256}"
+    source_metadata = comtrade_response_metadata(capture.payload)
     records = normalize_trade_flows(capture.payload, run_id, source_record_id, set(hs_codes) if hs_codes else None)
     outputs = derive_trade_outputs(records)
     coverage = coverage_report(records, outputs, set(hs_codes) if hs_codes else None)
-    quality = validate_trade_flows(records, coverage)
+    quality = validate_trade_flows(records, coverage, source_metadata)
     failed = [result for result in quality if result.status == "fail"]
     if failed:
         print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))
@@ -439,6 +450,7 @@ def run_trade_exposure(period: str, reporter_code: str, partner_code: str, flow_
         "as_of": datetime.now(timezone.utc).isoformat(),
         "partition_keys": {"reporter_code": reporter_code, "period": period, "hs_codes": hs_codes, "flow_code": flow_code},
         "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": source_record_id},
+        "source_metadata": source_metadata,
         "location": f"storage://curated/03_trade_exposure/{run_id}/trade_flows",
         "quality": [item.model_dump(mode="json") for item in quality],
         "coverage": coverage,
@@ -450,11 +462,45 @@ def run_trade_exposure(period: str, reporter_code: str, partner_code: str, flow_
     return 0
 
 
+def validate_comtrade(period: str, reporter_code: str, partner_code: str, flow_code: str, hs_codes: list[str], trade_fixture: Path | None, settings: Settings) -> int:
+    """Validate a Comtrade response without writing raw or curated data."""
+    run_id = f"validation-{uuid.uuid4()}"
+    if trade_fixture:
+        capture = load_comtrade_fixture(trade_fixture.read_bytes(), source_uri=trade_fixture.resolve().as_uri())
+    else:
+        capture = fetch_comtrade(period=period, reporter_code=reporter_code, partner_code=partner_code, flow_code=flow_code, hs_codes=hs_codes, api_keys=settings.comtrade_api_keys, api_url=settings.comtrade_api_url)
+    source_record_id = f"source:{capture.content_sha256}"
+    source_metadata = comtrade_response_metadata(capture.payload)
+    records = normalize_trade_flows(capture.payload, run_id, source_record_id, set(hs_codes) if hs_codes else None)
+    outputs = derive_trade_outputs(records)
+    coverage = coverage_report(records, outputs, set(hs_codes) if hs_codes else None)
+    quality = validate_trade_flows(records, coverage, source_metadata)
+    failed = [item for item in quality if item.status == "fail"]
+    print(json.dumps({
+        "status": "fail" if failed else "pass",
+        "write_mode": "none",
+        "source_id": capture.request.source_id,
+        "content_sha256": capture.content_sha256,
+        "source_metadata": source_metadata,
+        "record_counts": {"trade_flows": len(records), **{name: len(rows) for name, rows in outputs.items()}},
+        "coverage": coverage,
+        "quality": [item.model_dump(mode="json") for item in quality],
+    }, indent=2))
+    return 2 if failed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="diligence-pipelines")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate-manifests")
     subparsers.add_parser("validate-docs")
+    validate_trade_parser = subparsers.add_parser("validate-comtrade", help="Validate a Comtrade response without publishing")
+    validate_trade_parser.add_argument("--period", required=True)
+    validate_trade_parser.add_argument("--reporter-code", required=True)
+    validate_trade_parser.add_argument("--partner-code", default="0")
+    validate_trade_parser.add_argument("--flow-code", default="M,X")
+    validate_trade_parser.add_argument("--hs-code", action="append", default=[])
+    validate_trade_parser.add_argument("--trade-fixture", type=Path)
     download_parser = subparsers.add_parser("download-uspto-bulk")
     download_parser.add_argument("--url", required=True, help="Official USPTO ODP artifact URL")
     download_parser.add_argument("--output", type=Path, required=True, help="Local artifact path")
@@ -486,6 +532,7 @@ def main() -> int:
     patent_search_parser = subparsers.add_parser("search-uspto-index")
     patent_search_parser.add_argument("--query", required=True)
     patent_search_parser.add_argument("--limit", type=int, default=25)
+    subparsers.add_parser("materialize-patent-catalog", help="Backfill deduplicated catalog from diligence.patent_index")
     index_parser = subparsers.add_parser("index-uspto-bulk")
     index_parser.add_argument("--file", type=Path, required=True, help="Downloaded USPTO ODP bulk artifact")
     index_parser.add_argument("--limit", type=int, help="Optional bounded pilot row count")
@@ -522,6 +569,8 @@ def main() -> int:
         return validate_manifests()
     if args.command == "validate-docs":
         return validate_docs(ROOT)
+    if args.command == "validate-comtrade":
+        return validate_comtrade(args.period, args.reporter_code, args.partner_code, args.flow_code, args.hs_code, args.trade_fixture, Settings.from_env())
     if args.command == "download-uspto-bulk":
         return download_uspto_bulk(args.url, args.output, Settings.from_env())
     if args.command == "search-uspto-odp":
@@ -536,6 +585,8 @@ def main() -> int:
         return refresh_uspto_odp(args.selection, args.output, args.previous_file, args.report_output, args.quality_output, args.max_age_days, args.max_examples, Settings.from_env())
     if args.command == "search-uspto-index":
         return search_uspto_index(args.query, args.limit, Settings.from_env())
+    if args.command == "materialize-patent-catalog":
+        return materialize_patent_catalog(Settings.from_env())
     if args.command == "index-uspto-bulk":
         return index_uspto_bulk(args.file, args.limit, Settings.from_env())
     if args.command == "enrich-uspto-index":

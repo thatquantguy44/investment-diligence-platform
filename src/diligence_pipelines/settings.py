@@ -26,7 +26,15 @@ class Settings:
     uspto_odp_product_query: str = "PatentsView granted patent disambiguated"
     uspto_odp_discovery_output: Path = Path(".data/uspto/odp_discovery.json")
     comtrade_api_key: str | None = None
+    comtrade_api_key_primary: str | None = None
+    comtrade_api_key_secondary: str | None = None
     comtrade_api_url: str = "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
+
+    @property
+    def comtrade_api_keys(self) -> tuple[str, ...]:
+        """Return configured Comtrade keys in primary-to-secondary order."""
+        keys = (self.comtrade_api_key_primary or self.comtrade_api_key, self.comtrade_api_key_secondary)
+        return tuple(dict.fromkeys(key for key in keys if key))
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -63,5 +71,7 @@ class Settings:
             uspto_odp_product_query=value("USPTO_ODP_PRODUCT_QUERY", "PatentsView granted patent disambiguated"),
             uspto_odp_discovery_output=Path(value("USPTO_ODP_DISCOVERY_OUTPUT", ".data/uspto/odp_discovery.json")),
             comtrade_api_key=value("COMTRADE_API_KEY", "") or None,
+            comtrade_api_key_primary=value("COMTRADE_API_KEY_PRIMARY", "") or value("COMTRADE_API_KEY", "") or None,
+            comtrade_api_key_secondary=value("COMTRADE_API_KEY_SECONDARY", "") or None,
             comtrade_api_url=value("COMTRADE_API_URL", "https://comtradeapi.un.org/public/v1/preview/C/A/HS"),
         )

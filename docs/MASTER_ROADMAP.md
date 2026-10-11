@@ -18,9 +18,10 @@ spec; this file records sequencing and dependencies across the repository.
 | Pipeline 01 — Entity graph | Complete for pilot | SEC EDGAR watchlist, optional GLEIF enrichment, provenance, quality gates, local/PostgreSQL publication |
 | Pipeline 02 — Technology and talent | Complete for pilot slice; hardening in progress | OpenAlex research metadata plus USPTO ODP-backed local patent index |
 | USPTO ODP release discovery | In progress | Scheduled catalog discovery and candidate snapshots; no automatic download or ingestion |
-| Pipeline 03 — Trade exposure | Pilot | Bounded UN Comtrade-compatible country/product aggregates with coverage reporting |
+| Pipeline 03 — Trade exposure | Pilot; follow-on hardening started | Bounded UN Comtrade-compatible country/product aggregates, non-publishing validation, and source-vintage/revision metadata |
 | Spec 0002 procurement signals | Planned | One country and one sector must be selected before implementation |
 | Spec 0002 career-page signals | Planned | Source permission and company allowlist must be defined before collection |
+| Spec 0003 WIFO/CNIPA signals | Placeholder | Candidate sources only; scope, access, and use case not yet defined |
 
 ## Ordered roadmap
 
@@ -31,6 +32,10 @@ spec; this file records sequencing and dependencies across the repository.
   release quality checks are implemented; PostgreSQL ingestion remains explicit.
 - Finish full-release ingestion at production scale, alerting, and operational
   scheduling around approved refreshes.
+- Populate the deduplicated `diligence.patent_catalog` after completed loads;
+  keep `diligence.patent_records` run-scoped for historical evidence.
+- OpenAlex live requests now honor `Retry-After` with bounded exponential
+  backoff; snapshot/backfill support remains deferred.
 - Keep OpenAlex and USPTO lineage explicit in every materialization.
 
 ### 2. Stabilize the shared operating layer — Planned
@@ -73,7 +78,15 @@ record alone.
 - More advanced entity resolution or automated investment conclusions.
 - Facility activity and other signals identified as later-phase work in Spec 0001.
 
+### 7. Spec 0003 discovery — Placeholder
+
+- Select one concrete WIFO dataset and one concrete CNIPA dataset or endpoint.
+- Define the diligence question, evidence fields, access terms, and whether
+  either source belongs in an existing pipeline.
+- Do not create live connectors or schedules until that boundary is approved.
+
 ## Detailed roadmaps
 
 - [Spec 0001 roadmap](specs/0001/ROADMAP.md)
 - [Spec 0002 roadmap](specs/0002/ROADMAP.md)
+- [Spec 0003 roadmap](specs/0003/ROADMAP.md)

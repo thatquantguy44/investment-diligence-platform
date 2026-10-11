@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp, run_entity_graph, run_technology_talent, run_trade_exposure, validate_manifests
+from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp, run_entity_graph, run_technology_talent, run_trade_exposure, validate_comtrade, validate_manifests
 from diligence_pipelines.sources.uspto_odp import BulkArtifact
 from diligence_pipelines.settings import Settings
 
@@ -36,6 +36,19 @@ def test_pipeline_03_trade_fixture_publishes_all_outputs(tmp_path: Path):
     assert list(output_root.glob("*/trade_flows.jsonl"))
     assert list(output_root.glob("*/partner_concentration.jsonl"))
     assert list(output_root.glob("*/mirror_trade_discrepancies.jsonl"))
+
+
+def test_pipeline_03_validation_does_not_write_storage(tmp_path: Path, capsys):
+    assert validate_comtrade(
+        "2024", "842", "0", "M,X", ["850760"],
+        Path("tests/fixtures/trade_flows.json"), Settings(data_root=tmp_path),
+    ) == 0
+    result = __import__("json").loads(capsys.readouterr().out)
+    assert result["status"] == "pass"
+    assert result["write_mode"] == "none"
+    assert result["source_metadata"]["returned_row_count"] > 0
+    assert not (tmp_path / "raw").exists()
+    assert not (tmp_path / "curated").exists()
 
 
 def test_odp_release_discovery_persists_snapshot(tmp_path: Path):

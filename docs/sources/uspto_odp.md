@@ -65,6 +65,24 @@ checks, freshness information, and new/changed/removed patent ID examples.
 Only an explicit `ingest-uspto-bulk` command changes the PostgreSQL patent
 index.
 
+The PostgreSQL model keeps two separate patent products:
+
+- `diligence.patent_index` is the searchable USPTO bulk-release index.
+- `diligence.patent_catalog` is the deduplicated canonical view keyed only by
+  `patent_id`.
+- `diligence.patent_records` remains run-scoped Pipeline 02 evidence keyed by
+  `(patent_id, run_id)` so repeated analyses retain history.
+
+After a full bulk ingestion finishes, backfill the canonical table without
+re-reading the source archives:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli materialize-patent-catalog
+```
+
+This command upserts from the current `patent_index`; it does not delete or
+rewrite run-scoped `patent_records`.
+
 Download the selected official artifact, then ingest a bounded pilot:
 
 ```bash

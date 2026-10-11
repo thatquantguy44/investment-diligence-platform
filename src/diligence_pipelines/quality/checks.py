@@ -52,7 +52,7 @@ def validate_patent_records(records: list[dict]) -> list[QualityResult]:
     ]
 
 
-def validate_trade_flows(records: list[dict], coverage: dict | None = None) -> list[QualityResult]:
+def validate_trade_flows(records: list[dict], coverage: dict | None = None, source_metadata: dict | None = None) -> list[QualityResult]:
     identifiers = [record.get("trade_flow_id") for record in records]
     duplicate_count = len(identifiers) - len(set(identifiers))
     missing_required = sum(not record.get("trade_flow_id") or not record.get("period") or record.get("trade_value_usd") is None for record in records)
@@ -63,4 +63,17 @@ def validate_trade_flows(records: list[dict], coverage: dict | None = None) -> l
         QualityResult(check_id="trade_source_ref_present", status="fail" if missing_source_refs else "pass", observed_value=missing_source_refs, threshold=0),
         QualityResult(check_id="trade_result_count", status="warn" if not records else "pass", observed_value=len(records), details="No trade flows returned" if not records else None),
         QualityResult(check_id="coverage_report_present", status="pass" if coverage else "fail", observed_value=1 if coverage else 0, threshold=1),
+        QualityResult(
+            check_id="trade_configured_coverage",
+            status="fail" if coverage and coverage.get("missing_hs_codes") else "pass",
+            observed_value=coverage.get("missing_hs_codes", []) if coverage else None,
+            details="Configured HS codes were not returned" if coverage and coverage.get("missing_hs_codes") else None,
+        ),
+        QualityResult(
+            check_id="trade_source_metadata_present",
+            status="fail" if not source_metadata or source_metadata.get("error") else "pass",
+            observed_value=0 if not source_metadata else 1,
+            threshold=1,
+            details=(source_metadata or {}).get("error") or ("Response metadata unavailable" if not source_metadata else None),
+        ),
     ]

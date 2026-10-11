@@ -102,6 +102,17 @@ class PostgresStorage:
                 )
             """)
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.patent_catalog (
+                    patent_id text PRIMARY KEY,
+                    source_file_sha256 text NOT NULL,
+                    source_release text,
+                    record jsonb NOT NULL,
+                    first_seen_at timestamptz NOT NULL DEFAULT now(),
+                    last_seen_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+            """)
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS diligence.patent_assignments (
                     record_id text NOT NULL,
                     run_id uuid NOT NULL,
@@ -267,7 +278,46 @@ class PostgresStorage:
                 ON CONFLICT (source_file_sha256) DO UPDATE SET metadata = EXCLUDED.metadata, ingested_at = now()
             """, (metadata["source_file_sha256"], metadata["source_path"], json.dumps(metadata, default=str)))
         connection.commit()
+        self.upsert_patent_catalog(records, metadata["source_file_sha256"], metadata.get("source_release"))
         return len(records)
+
+    def upsert_patent_catalog(self, records: list[dict[str, Any]], source_file_sha256: str, source_release: str | None = None) -> int:
+        """Upsert one canonical row per patent while preserving run-scoped records."""
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for record in records:
+                cursor.execute("""
+                    INSERT INTO diligence.patent_catalog
+                        (patent_id, source_file_sha256, source_release, record)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (patent_id) DO UPDATE SET
+                        source_file_sha256 = EXCLUDED.source_file_sha256,
+                        source_release = COALESCE(EXCLUDED.source_release, diligence.patent_catalog.source_release),
+                        record = EXCLUDED.record,
+                        last_seen_at = now(),
+                        updated_at = now()
+                """, (record["patent_id"], source_file_sha256, source_release, json.dumps(record, default=str)))
+        connection.commit()
+        return len(records)
+
+    def materialize_patent_catalog(self) -> int:
+        """Backfill the canonical table from the already-loaded patent index."""
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO diligence.patent_catalog
+                    (patent_id, source_file_sha256, record)
+                SELECT patent_id, source_file_sha256, record
+                FROM diligence.patent_index
+                ON CONFLICT (patent_id) DO UPDATE SET
+                    source_file_sha256 = EXCLUDED.source_file_sha256,
+                    record = EXCLUDED.record,
+                    last_seen_at = now(),
+                    updated_at = now()
+            """)
+            materialized = cursor.rowcount
+        connection.commit()
+        return materialized
 
     def record_uspto_odp_discovery(self, report: dict) -> str:
         connection = self._connect()
@@ -318,6 +368,16 @@ class PostgresStorage:
                 WHERE s.source_file_sha256 = %s AND p.patent_id = s.patent_id
             """, (source_file_sha256,))
             updated = cursor.rowcount
+            cursor.execute("""
+                UPDATE diligence.patent_catalog AS c
+                SET source_file_sha256 = p.source_file_sha256,
+                    record = p.record,
+                    last_seen_at = now(),
+                    updated_at = now()
+                FROM diligence.patent_index AS p
+                WHERE p.patent_id = c.patent_id
+                  AND p.source_file_sha256 = %s
+            """, (source_file_sha256,))
         connection.commit()
         return updated
 

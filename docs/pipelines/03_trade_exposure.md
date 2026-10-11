@@ -4,6 +4,64 @@ The bounded pilot normalizes annual or monthly UN Comtrade-compatible records fo
 
 See the [UN Comtrade source runbook](../sources/un_comtrade.md) for credentials, preview versus subscription access, and terms considerations.
 
+## Approval worksheet: reporter countries and HS baskets
+
+**Status:** Candidate options only — no country or sector is approved yet.
+
+Pipeline 03 must begin with one approved reporter country and one approved
+sector basket. Record the decision here before using a broader live query.
+Reporter codes are UN Comtrade codes, not ISO country codes. HS baskets must
+also record the classification version because classifications and converted
+historical series can differ by source and period.
+
+### Country candidates
+
+| Country | UN Comtrade reporter code | Candidate rationale | Approval status |
+| --- | ---: | --- | --- |
+| USA | `842` | Already live-tested in this repository | Candidate |
+| China | `156` | Large manufacturing and export base | Candidate |
+| Germany | `276` | Industrial and automotive exposure | Candidate |
+| Japan | `392` | Advanced manufacturing and electronics | Candidate |
+| Republic of Korea | `410` | Batteries, semiconductors, and electronics | Candidate |
+| India | `699` | Large emerging manufacturing base | Candidate |
+| Netherlands | `528` | European logistics and trade hub | Candidate |
+| United Kingdom | `826` | Aerospace, life sciences, and services | Candidate |
+| Canada | `124` | Energy, minerals, and manufacturing | Candidate |
+| Austria | `040` | Small bounded pilot option | Candidate |
+
+### Sector basket candidates
+
+These are starter baskets, not final sector definitions. Begin with one basket
+and keep the first live run narrow.
+
+| Sector | Starter HS codes | Classification version | Approval status |
+| --- | --- | --- | --- |
+| Lithium-ion batteries | `850760` | To be confirmed before approval | Candidate |
+| EV supply chain | `850760`, `870380` | To be confirmed before approval | Candidate |
+| Semiconductors | `8541`, `8542` | To be confirmed before approval | Candidate |
+| Telecom equipment | `8517` | To be confirmed before approval | Candidate |
+| Medical devices | `9018` | To be confirmed before approval | Candidate |
+| Aerospace | `8802`, `8803` | To be confirmed before approval | Candidate |
+| Industrial automation | `8479`, `8537` | To be confirmed before approval | Candidate |
+| Renewable power equipment | `8504`, `8541` | To be confirmed before approval | Candidate |
+
+### Decision record
+
+- Approved country:
+- Approved reporter code:
+- Approved sector:
+- Approved HS codes:
+- HS classification version:
+- Period or date range:
+- Partner scope, default `0` / World:
+- Flow scope, default imports and exports:
+- Reviewer:
+- Review date:
+- Coverage and access notes:
+
+No candidate becomes an active Pipeline 03 configuration until this decision
+record is completed and reviewed.
+
 ## Offline fixture replay
 
 ```bash
@@ -15,6 +73,20 @@ PYTHONPATH=src python -m diligence_pipelines.cli run 03_trade_exposure \
 ```
 
 The fixture is synthetic and is intended for deterministic tests. Use `DILIGENCE_STORAGE_BACKEND=postgres` to publish the same output tables to the configured `IDP` database.
+
+## Non-publishing validation
+
+Before publishing a live response, validate its shape and observed coverage without writing to storage:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli validate-comtrade \
+  --period 2024 \
+  --reporter-code 842 \
+  --hs-code 850760 \
+  --trade-fixture tests/fixtures/trade_flows.json
+```
+
+The command reports the response hash, row count, source-vintage/revision metadata, coverage, and quality checks. It exits non-zero when configured HS codes are missing or another check fails, and never writes raw or curated data. The publishing path records the same source metadata in its product manifest.
 
 ## Live connector path
 
@@ -35,4 +107,4 @@ The initial connector uses the public UN Comtrade preview endpoint. Confirm the 
 - Partner HHI = `sum(partner share²) × 10,000`.
 - Mirror discrepancy ratio = `abs(reported export − counterpart mirror import) / max(reported export, counterpart mirror import)`.
 
-The manifest records observed and configured HS codes, missingness, counterpart coverage, source hashes, and limitations. These aggregates do not establish named-company import/export activity. Mirror differences can reflect timing, valuation, routing, re-exports, units, or reporting coverage.
+The manifest records observed and configured HS codes, missingness, counterpart coverage, source hashes, source-vintage/revision metadata, and limitations. These aggregates do not establish named-company import/export activity. Mirror differences can reflect timing, valuation, routing, re-exports, units, or reporting coverage.
