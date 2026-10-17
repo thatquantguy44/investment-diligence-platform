@@ -1,37 +1,37 @@
-# Investment Diligence Pipelines: Executive Briefing
+# Investment Diligence Pipelines: Overview
 
-## Summary
+## The short version
 
-This repository is a **data-engineering foundation for investment diligence**. It pulls public, official data about companies, patents, research and trade. It stores the raw data unchanged, links records to the right company, checks quality, and publishes versioned datasets that downstream research tools can use.
+This project is the data foundation for our investment diligence work. It pulls public, official data on companies, patents, research and trade. It keeps the raw data exactly as received, ties records to the right company, checks quality, and publishes versioned datasets that our research tools can build on.
 
-It does **not** make investment decisions.
+It doesn't make investment decisions. It makes sure the data going into them is clean and traceable.
 
-## Scope: US-first
+## Scope: US first
 
-The current build is **focused on the United States**. The core sources are US regulatory and government feeds:
+Right now I've kept this focused on the US. The core sources are US regulatory and government feeds:
 
-| Source | Role | Coverage |
+| Source | What I use it for | Coverage |
 | --- | --- | --- |
 | SEC EDGAR | Company identity and filings (Pipeline 01) | US |
 | USPTO Open Data Portal | Patents (Pipeline 02) | US |
-| GLEIF | Legal-entity identifiers (LEI) used to enrich entities | Global registry, used here for US watchlist entities |
-| OpenAlex | Research-publication metadata (Pipeline 02) | International dataset, queried via its official API |
-| UN Comtrade | Country and product trade flows (Pipeline 03) | International dataset, queried via its official API |
+| GLEIF | Legal-entity identifiers that enrich the entity records | Global registry, used here for US watchlist companies |
+| OpenAlex | Research-publication metadata (Pipeline 02) | International dataset, reached through its official API |
+| UN Comtrade | Country and product trade flows (Pipeline 03) | International dataset, reached through its official API |
 
-All sources are accessed through **official, documented APIs or bulk downloads** with the credentials and identification each provider requires. The watchlists and entity spine are US companies.
+Everything comes through official APIs or bulk downloads, using the keys and identification each provider asks for. The watchlists and the entity backbone are US companies.
 
-### Extending to other global sources
+### Going global
 
-The pipeline pattern (capture, normalize, resolve, check, publish) is source-agnostic, so non-US sources can be added. Examples already in the specs are other national procurement portals, WIFO and CNIPA patent data, and multilingual news and documents.
+The design isn't tied to the US. Every pipeline follows the same steps (capture, normalize, resolve, check, publish), so adding other countries' sources is possible. The specs already point at other national procurement portals, WIFO and CNIPA patent data, and multilingual news and documents.
 
-**Non-US expansion needs more care than the US build.** Each new source must pass a source-policy review before any live connector is written:
+I would be more careful with non-US sources, though. Before I write any connector for one, I want it to pass a source-policy review:
 
-- **No spoofing or evasion.** We do not disguise our identity, rotate IPs or fake browser fingerprints, and we do not bypass access controls or terms of service. Connectors send an honest, consistent User-Agent with contact information, use issued API keys, and respect rate limits and `Retry-After`.
-- **Check access terms and licensing per source.** Some portals restrict automated access, reuse or redistribution. If no official or licensed feed exists, we do not build the connector.
-- **Check legal and data-protection rules per jurisdiction.** This applies especially to personal data, such as inventors or hiring and career-page signals.
-- **Handle language and schema differences.** Multilingual sources need translation and extraction with source-language excerpts and evidence spans preserved.
-- **Review one country and one sector at a time.** This is already the roadmap rule for procurement signals.
-- **Keep provenance.** Spoofing would also break the audit trail that makes the evidence defensible.
+- **No spoofing or evasion.** I won't disguise who we are, rotate IPs, fake browser fingerprints, or get around access controls or terms of service. Our connectors send an honest User-Agent with contact info, use issued API keys, and respect rate limits. That matters more abroad, where the rules and enforcement are less familiar to us.
+- **Check the access terms and licensing for each source.** Some portals restrict automated access or reuse. If there's no official or licensed feed, I don't build the connector.
+- **Check legal and data-protection rules for each country.** This is especially true for personal data, like inventors or career-page hiring signals.
+- **Plan for language and format differences.** Multilingual sources need translation and extraction that keeps the original text and evidence.
+- **Go one country and one sector at a time.** That's already the rule in the roadmap for procurement signals.
+- **Keep the audit trail intact.** Spoofing would also undermine the provenance that makes this evidence defensible.
 
 ## How it works
 
@@ -39,55 +39,55 @@ The pipeline pattern (capture, normalize, resolve, check, publish) is source-agn
 public source → immutable raw capture → normalized records → quality gates → published, versioned product
 ```
 
-Design rules:
+The rules I built it around:
 
 - **Audit trail.** Raw responses are append-only and addressed by content hash. Every derived record points back to its source.
-- **No guessing.** Unknown dates stay null. Company matches are *suggestions* until a person reviews them.
-- **Gated publishing.** If required quality checks fail, nothing is published.
-- **Clean handoff.** A versioned data contract is the only interface to downstream systems (QuantSmith, the research-agent layer).
-- **Storage.** Local files for development, PostgreSQL (database `IDP`) for real use.
+- **No guessing.** Unknown dates stay empty. Company matches are suggestions until a person reviews them.
+- **Gated publishing.** If a required quality check fails, nothing gets published.
+- **Clean handoff.** A versioned data contract is the only interface to downstream systems like QuantSmith, our research-agent layer.
+- **Storage.** Local files for development and PostgreSQL (database `IDP`) for real use.
 
 ## The pipelines
 
 | # | Pipeline | Status | What it does |
 | --- | --- | --- | --- |
-| 01 | Entity graph | Pilot complete | SEC EDGAR watchlist plus optional GLEIF IDs. Builds the "who is who" spine. |
+| 01 | Entity graph | Pilot complete | SEC EDGAR watchlist plus optional GLEIF IDs. This is the "who is who" backbone. |
 | 02 | Technology and talent | Pilot complete, hardening | OpenAlex research plus USPTO patents. Links inventors, institutions and topics. |
 | 03 | Trade exposure | Pilot | UN Comtrade flows, concentration and mirror-trade discrepancies. |
 | 04 | Public awards | Planned | Procurement and grant events. Needs one country and one sector chosen first. |
 | 05 | Multilingual events | Planned | Document and event extraction. This is where LLMs come in. |
 
-Spec 0002 (procurement and career-page signals) is planned. Spec 0003 (WIFO/CNIPA) is a placeholder with no scope yet.
+Two specs sit behind the planned work. Spec 0002 covers procurement and career-page signals and is planned. Spec 0003 covers WIFO/CNIPA and is only a placeholder with no scope yet.
 
-## The ML integration
+## Where ML fits
 
-**Today there is no trained ML model in the pipelines.** What exists is deterministic code: exact-identifier entity matching, rule-based topic observations and statistical checks. Pipeline 02 is explicitly *not* an employment or technology-quality classifier.
+Today there is no trained ML model in these pipelines. What's there is deterministic code: exact-identifier entity matching, rule-based topic observations and statistical checks. Pipeline 02 is explicitly not an employment or technology-quality classifier.
 
-**Designed but not yet built (Spec 0001):**
+What's designed but not built yet (Spec 0001):
 
-- **Local LLM interface.** A replaceable `ModelClient` protocol, running on local inference. The model, runtime and GPU platform are not yet chosen or approved.
-- **Intended uses.** Translation and summarization, extraction of candidate events into a strict schema, and entity-linking assistance. Mainly for Pipeline 05.
-- **Guardrails already specified:**
-  - A model output is an *extracted claim*, not a verified fact.
-  - Every claim carries its supporting text span.
+- **A local LLM interface.** A replaceable `ModelClient` running on local inference. We haven't picked or approved the model, runtime or GPU platform.
+- **What it's for.** Translation and summarization, pulling candidate events into a strict schema, and helping with entity linking. Mostly Pipeline 05.
+- **The guardrails, already specified:**
+  - A model output is an extracted claim, not a verified fact.
+  - Every claim carries the text it came from.
   - Model ID, revision, prompt and schema version are logged.
-  - Numbers and final feature calculations stay deterministic and code-owned.
+  - Numbers and final feature calculations stay in deterministic code.
   - Quality is measured against an analyst-reviewed evaluation set.
   - The model revision is pinned, with a rollback path.
-- **Downstream ML and agents.** QuantSmith consumes the published datasets. That layer lives outside this repo by design.
+- **Downstream ML and agents.** QuantSmith consumes the published datasets. That layer lives outside this repo on purpose.
 
-**Framing:** we built the trustworthy, auditable data layer first. ML and LLMs plug in behind evidence and quality gates once the data is reliable.
+My thinking: build the trustworthy, auditable data layer first, then plug ML and LLMs in behind evidence and quality gates once the data is reliable.
 
-## Open decisions
+## Decisions I need
 
 1. Which local LLM runtime and models are approved.
-2. Which country and sector to use for procurement signals, which is also the first step of any non-US expansion.
+2. Which country and sector to start with for procurement signals. This is also the first step of any non-US expansion.
 3. Which scheduler and object store to use in production.
-4. Which WIFO and CNIPA datasets matter, if any, and whether access terms allow our use.
+4. Which WIFO and CNIPA datasets matter, if any, and whether their access terms allow our use.
 
 ## Where to look
 
 - `README.md`: quick start
 - `docs/MASTER_ROADMAP.md`: sequencing
 - `docs/source-policy.md` and `docs/sources/`: per-source access rules
-- `docs/specs/0001/`: full design, including the LLM boundary
+- `docs/specs/0001/`: the full design, including the LLM boundary
