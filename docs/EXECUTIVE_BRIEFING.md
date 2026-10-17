@@ -78,6 +78,25 @@ What's designed but not built yet (Spec 0001):
 
 My thinking: build the trustworthy, auditable data layer first, then plug ML and LLMs in behind evidence and quality gates once the data is reliable.
 
+## What I've already built that applies here: NaturalSentinel
+
+I'm not starting the language side from scratch. I already built **NaturalSentinel**, a separate project that does natural language processing on regulatory and financing filings. It watches SEC, FINRA, Federal Register, BIS and similar sources, reads dense legal text, and turns it into structured, source-backed findings. It also includes financing-focused modules, such as securities financing, leveraged lending, counterparty risk, liquidity, and capital impact analysis. The pieces that map directly onto this pipeline's plans:
+
+| Need in the diligence pipelines | Already built in NaturalSentinel |
+| --- | --- |
+| Pull structured facts out of long documents | A five-stage filing pipeline: classification, decomposition, schema-based extraction, validation, and span grounding. Each extracted value is tied back to the exact source text. |
+| Evidence spans on every LLM claim (Spec 0001, REQ-006) | Span grounding and citation/lineage modules. |
+| A replaceable model interface that can run locally (REQ-009) | A provider layer with Anthropic, OpenAI, Gemini, Ollama (local models) and a deterministic mock for tests. |
+| Quality measured against reviewed examples, plus drift monitoring | Evaluation modules for benchmarking, scoring, calibration and drift. |
+| Audit trail and model governance | Audit logging, a control matrix, a failure taxonomy, model cards and policy modules. |
+| Memory, and learning from analyst feedback | A persistent memory store with human feedback and duplicate detection. |
+| Existing fetchers for regulatory sources | Live fetchers for SEC EDGAR, Federal Register, FINRA and BIS. |
+| Reusable, permission-gated building blocks | A skill framework (35 skills, 17 agents) and an MCP server, so other tools can call these capabilities. |
+
+**What this means in practice:** the LLM layer that Pipeline 05 and the entity-linking work call for doesn't need to be designed from nothing. I can adapt modules I've refined over the years, starting with the filing pipeline, span grounding, evaluation and the provider layer, and put them behind this project's evidence and quality gates.
+
+**Honest status:** NaturalSentinel is a separate repository, and none of it is wired into these pipelines yet. Integration is the proposal, and I'd keep the same boundary as before. Model output is an extracted claim with its source text. It is not a verified fact, and the numbers stay in deterministic code.
+
 ## Decisions I need
 
 1. Which local LLM runtime and models are approved.
