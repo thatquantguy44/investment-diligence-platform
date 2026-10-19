@@ -1,0 +1,48 @@
+# Named Pipeline 04 sector presets for `--sector`.
+#
+# USAspending ANDs different filter types and ORs codes within one type:
+# an award must match one of the NAICS codes AND (when given) one of the
+# keywords. NAICS and PSC are not combined here because requiring both
+# narrows the result to awards that carry a listed code of each kind.
+# `reference_psc` is documentation only; pass `--psc` explicitly to use it.
+#
+# Codes are NAICS 2017/2022; the listed codes did not change between vintages.
+# Selection status lives in docs/pipelines/04_public_awards.md.
+
+sectors:
+  semiconductors_microelectronics:
+    title: Semiconductors and microelectronics
+    award_group: contracts
+    naics: ["334413"]
+    reference_psc: ["5961", "5962"]
+    trade_hs_codes: ["8541", "8542"]
+
+  aerospace_missiles_space:
+    title: Aerospace, missiles, and space
+    award_group: contracts
+    naics: ["336411", "336412", "336413", "336414", "336415", "336419"]
+    reference_psc: ["1410", "1420", "1510", "1520", "1810"]
+    trade_hs_codes: ["8802", "8803"]
+
+  defense_electronics_sensing:
+    title: Defense electronics, sensing, and communications
+    award_group: contracts
+    naics: ["334511", "334220"]
+    reference_psc: ["5840", "5841", "5865"]
+    trade_hs_codes: ["8526", "8517"]
+
+  defense_rd:
+    title: Defense and deep-tech research and development
+    award_group: contracts
+    naics: ["541715", "541713"]
+    reference_psc: []
+    trade_hs_codes: []
+
+  ai_cyber_software:
+    title: AI, cyber, and mission software
+    award_group: contracts
+    naics: ["541511", "541512", "541519", "518210"]
+    # IT services NAICS codes are very large; keywords keep the slice focused.
+    keywords: ["artificial intelligence", "machine learning", "cybersecurity", "autonomy"]
+    reference_psc: []
+    trade_hs_codes: []

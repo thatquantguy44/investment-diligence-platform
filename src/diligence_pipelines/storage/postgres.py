@@ -6,6 +6,10 @@ from typing import Any
 from diligence_pipelines.sources.base import RawCapture
 
 
+# Fixed allowlists: table names are interpolated into SQL, so they must never come from input.
+AWARD_TABLES = ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration", "obligation_trends")
+EVENT_TABLES = ("source_documents", "event_candidates", "entity_event_edges", "event_signal_counts")
+
 class PostgresStorage:
     """PostgreSQL storage adapter for raw captures and curated Pipeline 01 output."""
 
@@ -199,6 +203,16 @@ class PostgresStorage:
                     PRIMARY KEY (record_id, run_id)
                 )
             """)
+            for table in (*AWARD_TABLES, *EVENT_TABLES):
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS diligence.{table} (
+                        record_id text NOT NULL,
+                        run_id uuid NOT NULL,
+                        record jsonb NOT NULL,
+                        created_at timestamptz NOT NULL DEFAULT now(),
+                        PRIMARY KEY (record_id, run_id)
+                    )
+                """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS diligence.mirror_trade_discrepancies (
                     record_id text NOT NULL,
@@ -458,3 +472,29 @@ class PostgresStorage:
             """, (run_id, product["product_id"], product["pipeline_id"], json.dumps(product, default=str)))
         connection.commit()
         return f"postgresql://diligence/product_manifests/{run_id}"
+
+    def _publish_outputs(self, run_id: str, outputs: dict[str, list[dict[str, Any]]], tables: tuple[str, ...], product: dict[str, Any]) -> str:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for output_name, rows in outputs.items():
+                if output_name not in tables:
+                    raise ValueError(f"Unknown output table: {output_name}")
+                for row in rows:
+                    cursor.execute(f"""
+                        INSERT INTO diligence.{output_name} (record_id, run_id, record)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (record_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                    """, (row["record_id"], run_id, json.dumps(row, default=str)))
+            cursor.execute("""
+                INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (materialization_id) DO NOTHING
+            """, (run_id, product["product_id"], product["pipeline_id"], json.dumps(product, default=str)))
+        connection.commit()
+        return f"postgresql://diligence/product_manifests/{run_id}"
+
+    def publish_award_product(self, run_id: str, awards: list[dict[str, Any]], product: dict[str, Any], outputs: dict[str, list[dict[str, Any]]]) -> str:
+        return self._publish_outputs(run_id, {"awards": awards, **outputs}, AWARD_TABLES, product)
+
+    def publish_event_product(self, run_id: str, documents: list[dict[str, Any]], product: dict[str, Any], outputs: dict[str, list[dict[str, Any]]]) -> str:
+        return self._publish_outputs(run_id, {"source_documents": documents, **outputs}, EVENT_TABLES, product)

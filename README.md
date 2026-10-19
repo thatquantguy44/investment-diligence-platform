@@ -95,3 +95,5 @@ git diff --check
 ```
 
 Pipeline 02 now has a pilot-complete OpenAlex + USPTO/PatentsView slice. See [docs/pipelines/02_technology_talent.md](docs/pipelines/02_technology_talent.md).
+
+Pipeline 04 adds a bounded USAspending public-awards pilot and Pipeline 05 adds a GDELT-backed event-candidate prototype. See [docs/pipelines/04_public_awards.md](docs/pipelines/04_public_awards.md) and [docs/pipelines/05_multilingual_events.md](docs/pipelines/05_multilingual_events.md).

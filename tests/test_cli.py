@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp, run_entity_graph, run_technology_talent, run_trade_exposure, validate_comtrade, validate_manifests
+from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp, run_entity_graph, run_multilingual_events, run_public_awards, run_technology_talent, run_trade_exposure, validate_comtrade, validate_gdelt, validate_manifests
 from diligence_pipelines.sources.uspto_odp import BulkArtifact
 from diligence_pipelines.settings import Settings
 
@@ -80,3 +80,37 @@ def test_odp_refresh_prepares_release_without_ingesting(tmp_path: Path, monkeypa
     assert report["ingestion_status"] == "not_started"
     assert report["quality"]["status"] == "pass"
     assert output.exists()
+
+
+def test_pipeline_04_award_fixture_publishes_all_outputs(tmp_path: Path):
+    options = {
+        "sector": "semiconductors_microelectronics", "award_group": "contracts", "start_date": None, "end_date": None,
+        "naics_codes": ["334413"], "psc_codes": [], "keywords": [], "awarding_agencies": [],
+        "max_records": 25, "max_transaction_awards": 10, "awards_fixture": Path("tests/fixtures/usaspending_awards.json"),
+        "entities": Path("tests/fixtures/entity_graph.jsonl"),
+    }
+    assert run_public_awards(options, Settings(data_root=tmp_path)) == 0
+    output_root = tmp_path / "curated/04_public_awards"
+    for name in ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration", "obligation_trends", "product_manifest"):
+        assert list(output_root.glob(f"*/{name}.jsonl")), name
+    manifest = __import__("json").loads(next(output_root.glob("*/product_manifest.jsonl")).read_text())
+    assert manifest["record_counts"]["award_events"] == 4
+    assert len(manifest["lineage"]) == 3
+
+
+def test_pipeline_05_event_fixture_publishes_and_validation_does_not_write(tmp_path: Path, capsys):
+    options = {
+        "sector": None, "query": "", "max_records": 75, "timespan": "7d", "start_datetime": None, "end_datetime": None,
+        "source_language": None, "source_country": None, "events_fixture": Path("tests/fixtures/gdelt_artlist.json"),
+        "entities": Path("tests/fixtures/entity_graph.jsonl"),
+    }
+    validation_root = tmp_path / "validation"
+    assert validate_gdelt(options, Settings(data_root=validation_root)) == 0
+    assert __import__("json").loads(capsys.readouterr().out)["write_mode"] == "none"
+    assert not validation_root.exists()
+    assert run_multilingual_events(options, Settings(data_root=tmp_path)) == 0
+    output_root = tmp_path / "curated/05_multilingual_events"
+    for name in ("source_documents", "event_candidates", "entity_event_edges", "event_signal_counts", "product_manifest"):
+        assert list(output_root.glob(f"*/{name}.jsonl")), name
+    manifest = __import__("json").loads(next(output_root.glob("*/product_manifest.jsonl")).read_text())
+    assert manifest["extractor"]["extractor_id"] == "rule_based"

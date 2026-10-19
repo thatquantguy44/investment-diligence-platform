@@ -1,0 +1,25 @@
+# Named Pipeline 05 GDELT queries for `--sector`, aligned with the Pipeline 04
+# presets in config/award_sectors.yaml. GDELT syntax: quote phrases, wrap OR
+# lists in parentheses, and separate AND terms with spaces. A `--query` value
+# is appended to the preset as an extra AND term.
+
+sectors:
+  semiconductors_microelectronics:
+    title: Semiconductors and microelectronics
+    query: '(semiconductor OR microelectronics OR "chip fab" OR foundry OR "CHIPS Act")'
+
+  aerospace_missiles_space:
+    title: Aerospace, missiles, and space
+    query: '(aerospace OR missile OR hypersonic OR satellite OR "launch vehicle" OR "fighter jet")'
+
+  defense_electronics_sensing:
+    title: Defense electronics, sensing, and communications
+    query: '(radar OR sonar OR "electronic warfare" OR "tactical radio" OR "missile defense")'
+
+  defense_rd:
+    title: Defense and deep-tech research and development
+    query: '(DARPA OR "defense research" OR "Defense Innovation Unit" OR "national laboratory")'
+
+  ai_cyber_software:
+    title: AI, cyber, and mission software
+    query: '("artificial intelligence" OR cybersecurity OR "autonomous systems" OR "defense software") (defense OR military OR Pentagon)'

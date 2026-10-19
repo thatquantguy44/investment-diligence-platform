@@ -39,3 +39,10 @@ COMTRADE_API_KEY_SECONDARY: ""
 # Legacy single-key name; still supported as a fallback for primary.
 COMTRADE_API_KEY: ""
 COMTRADE_API_URL: "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
+
+# Pipeline 04 USAspending endpoints; no key required.
+USASPENDING_AWARD_SEARCH_URL: "https://api.usaspending.gov/api/v2/search/spending_by_award/"
+USASPENDING_TRANSACTIONS_URL: "https://api.usaspending.gov/api/v2/transactions/"
+
+# Pipeline 05 GDELT DOC 2.0 endpoint; no key required. Keep request volume low.
+GDELT_DOC_API_URL: "https://api.gdeltproject.org/api/v2/doc/doc"

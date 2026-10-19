@@ -18,6 +18,12 @@ Spec 0001 is implemented through a working pilot foundation:
   a read-only `validate-comtrade` command and source-vintage/revision metadata
   capture. Live preview validation passes; country/sector approval and
   authenticated account coverage remain open.
+- Pipeline 04 publishes a bounded USAspending awards product with modification
+  history, recipient concentration, and unreviewed entity candidates. Live
+  validation and sector approval remain open.
+- Pipeline 05 publishes GDELT-discovered source documents and rule-based,
+  evidence-checked event candidates. An LLM extractor and the review workflow
+  remain open.
 - The knowledge application can read the configured PostgreSQL graph or use
   embedded fixtures.
 

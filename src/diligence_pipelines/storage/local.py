@@ -113,3 +113,15 @@ class LocalStorage:
             self.write_jsonl(f"curated/03_trade_exposure/{run_id}/{name}.jsonl", rows)
         self.write_jsonl(f"curated/03_trade_exposure/{run_id}/product_manifest.jsonl", [product])
         return str(output)
+
+    def _publish_outputs(self, pipeline_id: str, run_id: str, outputs: dict[str, list[dict]], product: dict, primary: str) -> str:
+        for name, rows in outputs.items():
+            self.write_jsonl(f"curated/{pipeline_id}/{run_id}/{name}.jsonl", rows)
+        self.write_jsonl(f"curated/{pipeline_id}/{run_id}/product_manifest.jsonl", [product])
+        return str(self.root / f"curated/{pipeline_id}/{run_id}/{primary}.jsonl")
+
+    def publish_award_product(self, run_id: str, awards: list[dict], product: dict, outputs: dict[str, list[dict]]) -> str:
+        return self._publish_outputs("04_public_awards", run_id, {"awards": awards, **outputs}, product, "awards")
+
+    def publish_event_product(self, run_id: str, documents: list[dict], product: dict, outputs: dict[str, list[dict]]) -> str:
+        return self._publish_outputs("05_multilingual_events", run_id, {"source_documents": documents, **outputs}, product, "source_documents")

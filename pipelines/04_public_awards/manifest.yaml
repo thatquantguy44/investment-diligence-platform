@@ -1,0 +1,17 @@
+pipeline_id: 04_public_awards
+title: Public awards, procurement, and grants
+status: pilot
+owner: quantitative-diligence-data-engineering
+purpose: Normalize bounded US federal contract and grant awards with modification history, recipient concentration, and classification tags
+sources:
+  - source_id: usaspending
+    method: api
+    terms_reviewed: false
+    max_requests_per_minute: 30
+    allowed_domains: [api.usaspending.gov]
+outputs: [awards, award_events, recipient_entities, technology_program_tags, recipient_concentration, obligation_trends]
+schedule: manual
+partition_by: [award_group, start_date, end_date, naics_codes, retrieval_date]
+sensitivity: public
+model_use: none
+quality_checks: [award_schema_valid, award_identifier_unique, award_source_ref_present, award_result_count, award_event_identifier_unique, award_event_award_ref_valid, award_coverage_report_present, award_result_not_truncated, award_source_metadata_present]
