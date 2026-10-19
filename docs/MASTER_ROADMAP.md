@@ -75,7 +75,7 @@ record alone.
 
 ### 5a. Pipelines 04 and 05 — In progress
 
-- Pipeline 04: run live validation, approve one sector filter, then consider
+- Pipeline 04: run live validation for the five selected defense/technology sector presets, record sign-off, then consider
   one non-US portal only after source-policy review. SAM.gov solicitations need
   their own key and review.
 - Pipeline 05: add a local LLM extractor behind `EventExtractor`, a labeled

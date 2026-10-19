@@ -60,7 +60,8 @@ quality.
 - [x] Separate obligation, outlay, and announced amounts and dates.
 - [x] Recipient grouping by UEI, unreviewed Pipeline 01 match candidates, classification tags, and recipient HHI.
 - [x] Non-publishing `validate-usaspending` command; local and PostgreSQL publication tested with fixtures.
-- [ ] Live API validation and an approved sector filter.
+- [x] Five defense/technology sector presets (`config/award_sectors.yaml`, `--sector`) and an `--awarding-agency` filter.
+- [ ] Live API validation and reviewer sign-off for the selected sectors.
 - [ ] One non-US portal after source-policy review; SAM.gov solicitations.
 
 ## Pipeline 05 — multilingual events prototype

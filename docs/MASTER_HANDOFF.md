@@ -130,16 +130,18 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 7. Run `validate-usaspending` and `validate-gdelt` against the live APIs from a
    machine with outbound access; the live connectors are only tested against
    mocked responses so far.
-8. Approve one Pipeline 04 sector filter in the
+8. Five Pipeline 04 defense/technology sector presets are selected in
+   [`config/award_sectors.yaml`](../config/award_sectors.yaml); run the
+   validation loop in the
    [approval worksheet](pipelines/04_public_awards.md#approval-worksheet-sector-filter)
-   before broader live pulls.
+   and record reviewer sign-off before broader live pulls.
 9. Pipeline 05: add a local LLM extractor behind the `EventExtractor` protocol,
    build a small labeled evaluation set for the rules, and design the analyst
    review step that promotes candidates to verified events.
 
 ## Current validation result
 
-The repository’s local test suite passes with 59 tests. Pipelines 04 and 05
+The repository’s local test suite passes with 62 tests. Pipelines 04 and 05
 publish from their synthetic fixtures to local storage and to a scratch
 PostgreSQL 16 `IDP` database (all nine new tables populated). Their live
 USAspending and GDELT paths were not run because the development sandbox had

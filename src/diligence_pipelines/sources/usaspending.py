@@ -58,6 +58,7 @@ def build_award_search_body(
     naics_codes: list[str] | None = None,
     psc_codes: list[str] | None = None,
     keywords: list[str] | None = None,
+    awarding_agencies: list[str] | None = None,
     page: int = 1,
     limit: int = MAX_PAGE_SIZE,
 ) -> dict:
@@ -77,6 +78,8 @@ def build_award_search_body(
         filters["psc_codes"] = {"require": [[code] for code in psc_codes]}
     if keywords:
         filters["keywords"] = list(keywords)
+    if awarding_agencies:
+        filters["agencies"] = [{"type": "awarding", "tier": "toptier", "name": name} for name in awarding_agencies]
     return {
         "filters": filters,
         "fields": AWARD_FIELDS[award_group],
@@ -96,6 +99,7 @@ def fetch_award_search(
     naics_codes: list[str] | None = None,
     psc_codes: list[str] | None = None,
     keywords: list[str] | None = None,
+    awarding_agencies: list[str] | None = None,
     max_records: int = 100,
     api_url: str = USASPENDING_AWARD_SEARCH_URL,
 ) -> list[RawCapture]:
@@ -109,7 +113,7 @@ def fetch_award_search(
         body = build_award_search_body(
             award_group=award_group, start_date=start_date, end_date=end_date,
             naics_codes=naics_codes, psc_codes=psc_codes, keywords=keywords,
-            page=page, limit=min(remaining, MAX_PAGE_SIZE),
+            awarding_agencies=awarding_agencies, page=page, limit=min(remaining, MAX_PAGE_SIZE),
         )
         capture = _post_json("usaspending", api_url, body, "usaspending-awards-1.0.0")
         captures.append(capture)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from diligence_pipelines.awards import award_coverage_report, derive_award_outputs
+from diligence_pipelines.awards import award_coverage_report, derive_award_outputs, load_award_sector
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.docs_validation import validate_docs
 from diligence_pipelines.entities import load_entity_candidates
@@ -505,7 +505,7 @@ def _collect_public_awards(options: dict, settings: Settings, run_id: str) -> di
         award_captures = fetch_award_search(
             award_group=options["award_group"], start_date=options["start_date"], end_date=options["end_date"],
             naics_codes=options["naics_codes"], psc_codes=options["psc_codes"], keywords=options["keywords"],
-            max_records=options["max_records"], api_url=settings.usaspending_award_search_url,
+            awarding_agencies=options["awarding_agencies"], max_records=options["max_records"], api_url=settings.usaspending_award_search_url,
         )
         transaction_captures = {}
     source_metadata = award_search_metadata([capture.payload for capture in award_captures])
@@ -532,7 +532,7 @@ def _collect_public_awards(options: dict, settings: Settings, run_id: str) -> di
 
 
 def _award_partition_keys(options: dict) -> dict:
-    return {key: options[key] for key in ("award_group", "start_date", "end_date", "naics_codes", "psc_codes", "keywords", "max_records")}
+    return {key: options[key] for key in ("sector", "award_group", "start_date", "end_date", "naics_codes", "psc_codes", "keywords", "awarding_agencies", "max_records")}
 
 
 def run_public_awards(options: dict, settings: Settings) -> int:
@@ -651,7 +651,9 @@ def validate_gdelt(options: dict, settings: Settings) -> int:
 
 
 def _add_award_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--award-group", choices=("contracts", "grants"), default="contracts", help="Pipeline 04 USAspending award type group")
+    parser.add_argument("--sector", help="Pipeline 04 named sector preset from config/award_sectors.yaml; explicit filters are added to it")
+    parser.add_argument("--award-group", choices=("contracts", "grants"), help="Pipeline 04 USAspending award type group; defaults to the sector's group or contracts")
+    parser.add_argument("--awarding-agency", action="append", default=[], help="Pipeline 04 top-tier awarding agency name, e.g. 'Department of Defense'")
     parser.add_argument("--start-date", help="Pipeline 04 action-date window start, YYYY-MM-DD")
     parser.add_argument("--end-date", help="Pipeline 04 action-date window end, YYYY-MM-DD")
     parser.add_argument("--naics", action="append", default=[], help="Pipeline 04 NAICS code; repeat for a sector basket")
@@ -671,13 +673,23 @@ def _add_event_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _award_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
+    sector = {"name": None, "award_group": None, "naics": [], "psc": [], "keywords": []}
+    if args.sector:
+        try:
+            sector = load_award_sector(args.sector, ROOT / "config" / "award_sectors.yaml")
+        except ValueError as exc:
+            parser.error(str(exc))
+    naics = list(dict.fromkeys([*sector["naics"], *args.naics]))
+    psc = list(dict.fromkeys([*sector["psc"], *args.psc]))
+    keywords = list(dict.fromkeys([*sector["keywords"], *args.keyword]))
     if not args.awards_fixture and not (args.start_date and args.end_date):
         parser.error("Pipeline 04 requires --start-date and --end-date for live collection")
-    if not args.awards_fixture and not (args.naics or args.psc or args.keyword):
-        parser.error("Pipeline 04 requires at least one --naics, --psc, or --keyword to bound the search")
+    if not args.awards_fixture and not (naics or psc or keywords):
+        parser.error("Pipeline 04 requires --sector or at least one --naics, --psc, or --keyword to bound the search")
     return {
-        "award_group": args.award_group, "start_date": args.start_date, "end_date": args.end_date,
-        "naics_codes": args.naics, "psc_codes": args.psc, "keywords": args.keyword,
+        "sector": sector["name"], "award_group": args.award_group or sector["award_group"] or "contracts",
+        "start_date": args.start_date, "end_date": args.end_date,
+        "naics_codes": naics, "psc_codes": psc, "keywords": keywords, "awarding_agencies": args.awarding_agency,
         "max_records": args.max_results, "max_transaction_awards": args.max_transaction_awards,
         "awards_fixture": args.awards_fixture, "entities": args.entities,
     }

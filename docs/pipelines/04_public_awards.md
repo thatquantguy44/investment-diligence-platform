@@ -26,31 +26,56 @@ and source review.
 
 ## Approval worksheet: sector filter
 
-**Status:** Candidate options only — no sector is approved yet.
+**Status:** Five defense and technology sectors selected; each still needs a
+live `validate-usaspending` run and a reviewer sign-off before broader pulls.
 
-Pipeline 04 starts with one award group, one sector filter, and one action-date
-window. Record the decision here before a broader live pull. NAICS codes changed
-between the 2017 and 2022 vintages (for example, batteries moved from
-`335911` to `335910`); confirm the vintage before approval.
+Each sector is a named preset in
+[`config/award_sectors.yaml`](../../config/award_sectors.yaml), run with
+`--sector <name>`. Explicit `--naics`, `--psc`, and `--keyword` flags are added
+to the preset. USAspending ANDs different filter types and ORs codes within one
+type, so presets use NAICS only (plus keywords where noted); the PSC column is
+reference for a narrower follow-up run. Add `--awarding-agency "Department of
+Defense"` to restrict any sector to DoD awards.
 
-| Sector | Award group | Starter filter | Approval status |
-| --- | --- | --- | --- |
-| Semiconductors | contracts | NAICS `334413`; PSC `5961`, `5962` | Candidate (fixture uses this) |
-| Lithium-ion batteries | contracts | NAICS `335910`, `335911` | Candidate |
-| Aerospace | contracts | NAICS `336411`, `336413`, `336414` | Candidate |
-| Medical devices | contracts | NAICS `339112`, `334510` | Candidate |
-| Industrial automation | contracts | NAICS `333249`, `335314` | Candidate |
-| Semiconductor R&D grants | grants | Keywords such as `semiconductor`, `CHIPS` | Candidate |
+| # | Sector preset | NAICS | Keywords | Reference PSC | Pipeline 03 HS | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `semiconductors_microelectronics` | `334413` | — | `5961`, `5962` | `8541`, `8542` | Selected |
+| 2 | `aerospace_missiles_space` | `336411`, `336412`, `336413`, `336414`, `336415`, `336419` | — | `1410`, `1420`, `1510`, `1520`, `1810` | `8802`, `8803` | Selected |
+| 3 | `defense_electronics_sensing` | `334511`, `334220` | — | `5840`, `5841`, `5865` | `8526`, `8517` | Selected |
+| 4 | `defense_rd` | `541715`, `541713` | — | — | — | Selected |
+| 5 | `ai_cyber_software` | `541511`, `541512`, `541519`, `518210` | `artificial intelligence`, `machine learning`, `cybersecurity`, `autonomy` | — | — | Selected |
+
+Why these five:
+
+1. **Semiconductors and microelectronics:** trusted foundry, rad-hard parts, and CHIPS-era supply-chain priority; maps directly to Pipeline 03 HS baskets.
+2. **Aerospace, missiles, and space:** aircraft, engines, guided missiles, space vehicles, and their parts; the largest defense hardware category.
+3. **Defense electronics, sensing, and communications:** radar, sonar, navigation, guidance, electronic warfare (NAICS `334511`), and tactical radio (`334220`).
+4. **Defense and deep-tech R&D:** physical-science, engineering, and nanotechnology R&D contracts (DARPA, service labs, DOE); early signal for emerging technology.
+5. **AI, cyber, and mission software:** IT-services NAICS narrowed by keywords; these codes are otherwise very large and noisy.
+
+Runners-up, not selected: shipbuilding (`336611`), combat vehicles (`336992`),
+ammunition and ordnance (`332993`, `332994`), and batteries (`335910`).
 
 ### Decision record
 
-- Approved award group:
-- Approved NAICS / PSC codes or keywords:
-- Action-date window:
-- `--max-results` and `--max-transaction-awards` bounds:
+- Selected sectors: the five presets above.
+- Award group: contracts.
+- Action-date window: to be set at first live validation (suggested: 2024-01-01 to 2024-12-31).
+- `--max-results` and `--max-transaction-awards` bounds: suggested 100 and 10 per sector.
 - Reviewer:
 - Review date:
-- Coverage and access notes:
+- Coverage and access notes: pending live validation; record the truncation flag and returned row count per sector.
+
+### Validation commands
+
+```bash
+for sector in semiconductors_microelectronics aerospace_missiles_space \
+  defense_electronics_sensing defense_rd ai_cyber_software; do
+  PYTHONPATH=src python -m diligence_pipelines.cli validate-usaspending \
+    --sector "$sector" --start-date 2024-01-01 --end-date 2024-12-31 \
+    --max-results 100
+done
+```
 
 ## Offline fixture replay
 
@@ -73,13 +98,14 @@ PYTHONPATH=src python -m diligence_pipelines.cli validate-usaspending \
   --naics 334413 --max-results 50
 
 PYTHONPATH=src python -m diligence_pipelines.cli run 04_public_awards \
-  --award-group contracts --start-date 2024-01-01 --end-date 2024-12-31 \
-  --naics 334413 --max-results 50 --max-transaction-awards 10 \
+  --sector defense_electronics_sensing --awarding-agency "Department of Defense" \
+  --start-date 2024-01-01 --end-date 2024-12-31 \
+  --max-results 50 --max-transaction-awards 10 \
   --entities .data/curated/01_entity_graph/<run_id>/entities.jsonl
 ```
 
-A live run requires a date window and at least one `--naics`, `--psc`, or
-`--keyword` filter. The live connector has been unit-tested against mocked
+A live run requires a date window and `--sector` or at least one `--naics`,
+`--psc`, or `--keyword` filter. The live connector has been unit-tested against mocked
 responses but has not yet been run against the real API from this repository.
 
 ## Formulas and quality gates

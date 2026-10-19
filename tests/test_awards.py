@@ -108,3 +108,44 @@ def test_award_search_paginates_until_max_records(monkeypatch):
     assert [body["page"] for body in requests] == [1, 2]
     assert requests[0]["filters"]["award_type_codes"] == ["02", "03", "04", "05"]
     assert all(capture.request.source_id == "usaspending" for capture in captures)
+
+
+SECTORS = Path("config/award_sectors.yaml")
+EXPECTED_SECTORS = {"semiconductors_microelectronics", "aerospace_missiles_space", "defense_electronics_sensing", "defense_rd", "ai_cyber_software"}
+
+
+def test_every_sector_preset_builds_a_bounded_search():
+    import yaml
+
+    from diligence_pipelines.awards import load_award_sector
+
+    names = set(yaml.safe_load(SECTORS.read_text())["sectors"])
+    assert names == EXPECTED_SECTORS
+    for name in names:
+        sector = load_award_sector(name, SECTORS)
+        assert all(code.isdigit() and len(code) == 6 for code in sector["naics"]), name
+        body = build_award_search_body(award_group=sector["award_group"], start_date="2024-01-01", end_date="2024-12-31", naics_codes=sector["naics"], psc_codes=sector["psc"], keywords=sector["keywords"])
+        assert body["filters"]["naics_codes"]["require"] == sector["naics"]
+    assert load_award_sector("ai_cyber_software", SECTORS)["keywords"]
+    with pytest.raises(ValueError, match="choose from"):
+        load_award_sector("shipbuilding", SECTORS)
+
+
+def test_awarding_agency_filter_targets_top_tier_awarding_agency():
+    body = build_award_search_body(award_group="contracts", start_date="2024-01-01", end_date="2024-12-31", naics_codes=["334511"], awarding_agencies=["Department of Defense"])
+    assert body["filters"]["agencies"] == [{"type": "awarding", "tier": "toptier", "name": "Department of Defense"}]
+
+
+def test_cli_merges_sector_preset_with_explicit_filters(monkeypatch):
+    import sys
+
+    from diligence_pipelines import cli
+
+    captured = {}
+    monkeypatch.setattr(cli, "validate_usaspending", lambda options, settings: captured.update(options) or 0)
+    monkeypatch.setattr(sys, "argv", ["diligence-pipelines", "validate-usaspending", "--sector", "defense_electronics_sensing", "--naics", "334290", "--awarding-agency", "Department of Defense", "--start-date", "2024-01-01", "--end-date", "2024-12-31"])
+    assert cli.main() == 0
+    assert captured["naics_codes"] == ["334511", "334220", "334290"]
+    assert captured["award_group"] == "contracts"
+    assert captured["awarding_agencies"] == ["Department of Defense"]
+    assert captured["sector"] == "defense_electronics_sensing"

@@ -84,7 +84,8 @@ def test_odp_refresh_prepares_release_without_ingesting(tmp_path: Path, monkeypa
 
 def test_pipeline_04_award_fixture_publishes_all_outputs(tmp_path: Path):
     options = {
-        "award_group": "contracts", "start_date": None, "end_date": None, "naics_codes": ["334413"], "psc_codes": [], "keywords": [],
+        "sector": "semiconductors_microelectronics", "award_group": "contracts", "start_date": None, "end_date": None,
+        "naics_codes": ["334413"], "psc_codes": [], "keywords": [], "awarding_agencies": [],
         "max_records": 25, "max_transaction_awards": 10, "awards_fixture": Path("tests/fixtures/usaspending_awards.json"),
         "entities": Path("tests/fixtures/entity_graph.jsonl"),
     }

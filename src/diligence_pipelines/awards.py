@@ -2,9 +2,28 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Sequence
 
+import yaml
+
 from diligence_pipelines.entities.matching import suggest_match
+
+
+def load_award_sector(name: str, path: Path) -> dict:
+    """Return one named sector preset from the award sectors YAML file."""
+    sectors = (yaml.safe_load(path.read_text()) or {}).get("sectors") or {}
+    if name not in sectors:
+        raise ValueError(f"Unknown award sector {name!r}; choose from: {', '.join(sorted(sectors))}")
+    sector = sectors[name]
+    return {
+        "name": name,
+        "title": sector.get("title", name),
+        "award_group": sector.get("award_group", "contracts"),
+        "naics": [str(code) for code in sector.get("naics") or []],
+        "psc": [str(code) for code in sector.get("psc") or []],
+        "keywords": [str(word) for word in sector.get("keywords") or []],
+    }
 
 
 def _recipient_key(award: dict) -> str:
