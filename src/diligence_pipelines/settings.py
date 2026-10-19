@@ -29,6 +29,9 @@ class Settings:
     comtrade_api_key_primary: str | None = None
     comtrade_api_key_secondary: str | None = None
     comtrade_api_url: str = "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
+    usaspending_award_search_url: str = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
+    usaspending_transactions_url: str = "https://api.usaspending.gov/api/v2/transactions/"
+    gdelt_doc_api_url: str = "https://api.gdeltproject.org/api/v2/doc/doc"
 
     @property
     def comtrade_api_keys(self) -> tuple[str, ...]:
@@ -74,4 +77,7 @@ class Settings:
             comtrade_api_key_primary=value("COMTRADE_API_KEY_PRIMARY", "") or value("COMTRADE_API_KEY", "") or None,
             comtrade_api_key_secondary=value("COMTRADE_API_KEY_SECONDARY", "") or None,
             comtrade_api_url=value("COMTRADE_API_URL", "https://comtradeapi.un.org/public/v1/preview/C/A/HS"),
+            usaspending_award_search_url=value("USASPENDING_AWARD_SEARCH_URL", "https://api.usaspending.gov/api/v2/search/spending_by_award/"),
+            usaspending_transactions_url=value("USASPENDING_TRANSACTIONS_URL", "https://api.usaspending.gov/api/v2/transactions/"),
+            gdelt_doc_api_url=value("GDELT_DOC_API_URL", "https://api.gdeltproject.org/api/v2/doc/doc"),
         )

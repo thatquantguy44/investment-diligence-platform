@@ -19,6 +19,8 @@ spec; this file records sequencing and dependencies across the repository.
 | Pipeline 02 — Technology and talent | Complete for pilot slice; hardening in progress | OpenAlex research metadata plus USPTO ODP-backed local patent index |
 | USPTO ODP release discovery | In progress | Scheduled catalog discovery and candidate snapshots; no automatic download or ingestion |
 | Pipeline 03 — Trade exposure | Pilot; follow-on hardening started | Bounded UN Comtrade-compatible country/product aggregates, non-publishing validation, and source-vintage/revision metadata |
+| Pipeline 04 — Public awards | Pilot | Bounded USAspending contracts/grants with modification history, recipient concentration, and unreviewed entity candidates; live path not yet run |
+| Pipeline 05 — Multilingual events | Prototype | GDELT DOC discovery, syndication handling, rule-based evidence-checked event candidates, entity mention edges; no LLM extractor or review workflow yet |
 | Spec 0002 procurement signals | Planned | One country and one sector must be selected before implementation |
 | Spec 0002 career-page signals | Planned | Source permission and company allowlist must be defined before collection |
 | Spec 0003 WIFO/CNIPA signals | Placeholder | Candidate sources only; scope, access, and use case not yet defined |
@@ -70,6 +72,15 @@ record alone.
 - Build the procurement notice evidence product with unresolved-match handling.
 - Define an approved company career-page allowlist, then build posting snapshots,
   role counts, and observed changes with stale/duplicate controls.
+
+### 5a. Pipelines 04 and 05 — In progress
+
+- Pipeline 04: run live validation, approve one sector filter, then consider
+  one non-US portal only after source-policy review. SAM.gov solicitations need
+  their own key and review.
+- Pipeline 05: add a local LLM extractor behind `EventExtractor`, a labeled
+  rule evaluation set, primary-source follow-up for an allowlist, and an analyst
+  review step for verified events.
 
 ### 6. Later expansion — Deferred
 

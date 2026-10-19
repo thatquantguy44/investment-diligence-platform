@@ -16,6 +16,22 @@ Pipeline `01_entity_graph` has a lightweight real path:
 
 The local fixture path remains the deterministic test path. SEC XBRL facts and ownership relationships are not implemented yet; those are follow-on enhancements to Pipeline 01.
 
+Pipeline `04_public_awards` (pilot) pulls a bounded USAspending contract or
+grant search (date window plus NAICS/PSC/keyword filter), fetches modification
+history for the top awards, and publishes `awards`, `award_events`,
+`recipient_entities`, `technology_program_tags`, and `recipient_concentration`.
+Obligation, outlay, and announced amounts stay separate. Recipient-to-entity
+matches against a Pipeline 01 entities file are unreviewed candidates. See
+[`docs/pipelines/04_public_awards.md`](pipelines/04_public_awards.md).
+
+Pipeline `05_multilingual_events` (prototype) pulls one bounded GDELT DOC
+article list, deduplicates URLs and syndicated copies, and extracts headline
+event candidates with a rule-based extractor. Every candidate carries an exact
+evidence span that a quality gate re-checks; nothing is promoted to a verified
+event. It publishes `source_documents`, `event_candidates`,
+`entity_event_edges`, and `event_signal_counts`. See
+[`docs/pipelines/05_multilingual_events.md`](pipelines/05_multilingual_events.md).
+
 ## PostgreSQL target and configurability
 
 The intended local backend is the PostgreSQL service used by `macro_medallion`:
@@ -41,6 +57,11 @@ The adapter creates a `diligence` schema in the configured database:
   `patent_id`.
 - `diligence.patent_records`: run-scoped Pipeline 02 evidence keyed by
   `(patent_id, run_id)`.
+- Pipeline 04: `diligence.awards`, `award_events`, `recipient_entities`,
+  `technology_program_tags`, `recipient_concentration`, keyed by
+  `(record_id, run_id)`.
+- Pipeline 05: `diligence.source_documents`, `event_candidates`,
+  `entity_event_edges`, `event_signal_counts`, keyed by `(record_id, run_id)`.
 
 ## Local variables and secrets
 
@@ -106,10 +127,23 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 5. Add migrations before the PostgreSQL schema is used outside local development.
 6. Keep Spec 0003 (WIFO/CNIPA) at placeholder status until a concrete dataset
    and diligence question are selected.
+7. Run `validate-usaspending` and `validate-gdelt` against the live APIs from a
+   machine with outbound access; the live connectors are only tested against
+   mocked responses so far.
+8. Approve one Pipeline 04 sector filter in the
+   [approval worksheet](pipelines/04_public_awards.md#approval-worksheet-sector-filter)
+   before broader live pulls.
+9. Pipeline 05: add a local LLM extractor behind the `EventExtractor` protocol,
+   build a small labeled evaluation set for the rules, and design the analyst
+   review step that promotes candidates to verified events.
 
 ## Current validation result
 
-The repository’s local test suite passes with 45 tests. Manifest and
+The repository’s local test suite passes with 59 tests. Pipelines 04 and 05
+publish from their synthetic fixtures to local storage and to a scratch
+PostgreSQL 16 `IDP` database (all nine new tables populated). Their live
+USAspending and GDELT paths were not run because the development sandbox had
+no outbound access to those hosts. Manifest and
 documentation validation pass. Pipeline 03 live preview validation returned
 two USA lithium-ion battery records for 2024 with zero configured-HS-code
 missingness; no data was written by the validation command. The full USPTO

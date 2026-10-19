@@ -1,0 +1,17 @@
+pipeline_id: 05_multilingual_events
+title: Multilingual company and policy event stream
+status: prototype
+owner: quantitative-diligence-data-engineering
+purpose: Discover headline-level company and policy event candidates with exact evidence spans, syndication handling, and entity mention edges
+sources:
+  - source_id: gdelt_doc
+    method: api
+    terms_reviewed: false
+    max_requests_per_minute: 6
+    allowed_domains: [api.gdeltproject.org]
+outputs: [source_documents, event_candidates, entity_event_edges, event_signal_counts]
+schedule: manual
+partition_by: [query, timespan, source_language, retrieval_date]
+sensitivity: public
+model_use: rule_based_extractor_only
+quality_checks: [document_identifier_unique, document_result_count, event_candidate_identifier_unique, event_document_ref_valid, event_evidence_supported, event_extractor_recorded, event_candidates_unverified, event_coverage_report_present, event_source_metadata_present]

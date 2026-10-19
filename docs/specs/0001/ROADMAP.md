@@ -53,9 +53,27 @@ quality.
 - Keep company-level attribution out of scope unless supported by separate
   company-specific evidence.
 
+## Pipeline 04 — public awards pilot
+
+- [x] USAspending award search with bounded pagination and raw capture per page.
+- [x] Transaction (modification) history for the top N awards as `award_events`.
+- [x] Separate obligation, outlay, and announced amounts and dates.
+- [x] Recipient grouping by UEI, unreviewed Pipeline 01 match candidates, classification tags, and recipient HHI.
+- [x] Non-publishing `validate-usaspending` command; local and PostgreSQL publication tested with fixtures.
+- [ ] Live API validation and an approved sector filter.
+- [ ] One non-US portal after source-policy review; SAM.gov solicitations.
+
+## Pipeline 05 — multilingual events prototype
+
+- [x] GDELT DOC article discovery with URL canonicalization and syndication handling.
+- [x] Rule-based headline event candidates with exact evidence spans and recorded extractor identity.
+- [x] Evidence-support, candidate-status, and extractor gates; entity mention edges and event signal counts.
+- [x] Non-publishing `validate-gdelt` command; local and PostgreSQL publication tested with fixtures.
+- [ ] Live API validation.
+- [ ] Local LLM extractor, labeled evaluation set, and canary comparison against the rules.
+- [ ] Primary-source follow-up allowlist and analyst review for verified events.
+
 ## Later Spec 0001 phases
 
-- Public awards and procurement signals.
-- Multilingual events and notices.
 - Facility activity and other signals identified as later-phase work in the
   parent specification.

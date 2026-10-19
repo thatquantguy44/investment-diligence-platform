@@ -1,0 +1,28 @@
+{
+  "awards": {
+    "limit": 4,
+    "page_metadata": {"page": 1, "hasNext": false},
+    "messages": [],
+    "results": [
+      {"internal_id": 1, "generated_internal_id": "CONT_AWD_SYN0001_9700_-NONE-_-NONE-", "Award ID": "SYN0001", "Recipient Name": "ACME ROBOTICS PTE LTD", "Recipient UEI": "SYNUEI000001", "recipient_id": "syn-hash-1-C", "Award Amount": 6000000.0, "Total Outlays": 2500000.0, "Description": "SYNTHETIC RADIATION-HARDENED MICROCIRCUITS", "Start Date": "2024-02-01", "End Date": "2026-01-31", "Base Obligation Date": "2024-01-15", "Last Modified Date": "2024-09-30 10:00:00", "Awarding Agency": "Department of Defense", "Awarding Sub Agency": "Defense Logistics Agency", "Funding Agency": "Department of Defense", "Funding Sub Agency": "Defense Logistics Agency", "Contract Award Type": "Definitive Contract", "NAICS": {"code": "334413", "description": "SEMICONDUCTOR AND RELATED DEVICE MANUFACTURING"}, "PSC": {"code": "5962", "description": "MICROCIRCUITS, ELECTRONIC"}},
+      {"internal_id": 2, "generated_internal_id": "CONT_AWD_SYN0002_9700_-NONE-_-NONE-", "Award ID": "SYN0002", "Recipient Name": "Acme Robotics Pte. Ltd.", "Recipient UEI": "SYNUEI000001", "recipient_id": "syn-hash-1-C", "Award Amount": 2000000.0, "Total Outlays": null, "Description": "SYNTHETIC WAFER TEST SERVICES", "Start Date": "2024-05-01", "End Date": "2025-04-30", "Base Obligation Date": "2024-04-20", "Last Modified Date": "2024-05-02 09:00:00", "Awarding Agency": "Department of Defense", "Awarding Sub Agency": "Department of the Navy", "Funding Agency": "Department of Defense", "Funding Sub Agency": "Department of the Navy", "Contract Award Type": "Delivery Order", "NAICS": {"code": "334413", "description": "SEMICONDUCTOR AND RELATED DEVICE MANUFACTURING"}, "PSC": {"code": "5962", "description": "MICROCIRCUITS, ELECTRONIC"}},
+      {"internal_id": 3, "generated_internal_id": "CONT_AWD_SYN0003_8900_-NONE-_-NONE-", "Award ID": "SYN0003", "Recipient Name": "DELTA MATERIALS CO LTD", "Recipient UEI": "SYNUEI000002", "recipient_id": "syn-hash-2-C", "Award Amount": 2000000.0, "Total Outlays": 2000000.0, "Description": "SYNTHETIC SILICON CARBIDE SUBSTRATES", "Start Date": "2024-03-01", "End Date": "2024-12-31", "Base Obligation Date": "2024-02-25", "Last Modified Date": "2024-12-31 12:00:00", "Awarding Agency": "Department of Energy", "Awarding Sub Agency": "Department of Energy", "Funding Agency": "Department of Energy", "Funding Sub Agency": "Department of Energy", "Contract Award Type": "Purchase Order", "NAICS": "334413", "PSC": "5961"},
+      {"internal_id": 4, "generated_internal_id": "CONT_AWD_SYN0004_4700_-NONE-_-NONE-", "Award ID": "SYN0004", "Recipient Name": "UNRELATED FOUNDRY SERVICES LLC", "Recipient UEI": null, "recipient_id": null, "Award Amount": 500000.0, "Total Outlays": null, "Description": "SYNTHETIC PACKAGING STUDY", "Start Date": "2024-07-01", "End Date": "2025-06-30", "Base Obligation Date": null, "Last Modified Date": "2024-07-01 08:00:00", "Awarding Agency": "General Services Administration", "Awarding Sub Agency": "Federal Acquisition Service", "Funding Agency": null, "Funding Sub Agency": null, "Contract Award Type": "Purchase Order", "NAICS": {"code": "334413", "description": "SEMICONDUCTOR AND RELATED DEVICE MANUFACTURING"}, "PSC": null}
+    ]
+  },
+  "transactions": {
+    "CONT_AWD_SYN0001_9700_-NONE-_-NONE-": {
+      "page_metadata": {"page": 1, "hasNext": false},
+      "results": [
+        {"id": "CONT_TX_SYN0001_0", "type": "D", "type_description": "Definitive Contract", "action_date": "2024-01-15", "action_type": null, "action_type_description": null, "modification_number": "0", "description": "SYNTHETIC BASE AWARD", "federal_action_obligation": 4000000.0},
+        {"id": "CONT_TX_SYN0001_1", "type": "D", "type_description": "Definitive Contract", "action_date": "2024-06-10", "action_type": "B", "action_type_description": "SUPPLEMENTAL AGREEMENT FOR WORK WITHIN SCOPE", "modification_number": "P00001", "description": "SYNTHETIC OPTION EXERCISE", "federal_action_obligation": 2000000.0}
+      ]
+    },
+    "CONT_AWD_SYN0003_8900_-NONE-_-NONE-": {
+      "page_metadata": {"page": 1, "hasNext": false},
+      "results": [
+        {"id": "CONT_TX_SYN0003_0", "type": "C", "type_description": "Purchase Order", "action_date": "2024-02-25", "action_type": null, "action_type_description": null, "modification_number": "0", "description": "SYNTHETIC BASE AWARD", "federal_action_obligation": 2000000.0}
+      ]
+    }
+  }
+}

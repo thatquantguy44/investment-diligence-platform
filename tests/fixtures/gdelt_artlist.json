@@ -1,0 +1,8 @@
+{"articles": [
+  {"url": "https://www.example-news.test/tech/acme-robotics-raises-50-million?utm_source=feed", "url_mobile": "", "title": "Acme Robotics raises $50 million in Series B funding round", "seendate": "20241015T120000Z", "socialimage": "", "domain": "example-news.test", "language": "English", "sourcecountry": "United States"},
+  {"url": "https://syndicate.example.test/wire/acme-robotics-raises", "url_mobile": "", "title": "Acme Robotics Raises $50 Million in Series B Funding Round", "seendate": "20241015T143000Z", "socialimage": "", "domain": "syndicate.example.test", "language": "English", "sourcecountry": "United States"},
+  {"url": "https://example-news.test/tech/acme-robotics-raises-50-million", "url_mobile": "", "title": "Acme Robotics raises $50 million in Series B funding round", "seendate": "20241015T120500Z", "socialimage": "", "domain": "example-news.test", "language": "English", "sourcecountry": "United States"},
+  {"url": "https://materials.example.test/delta-new-plant", "url_mobile": "", "title": "Delta Materials breaks ground on new plant for silicon carbide wafers", "seendate": "20241016T080000Z", "socialimage": "", "domain": "materials.example.test", "language": "English", "sourcecountry": "China"},
+  {"url": "https://cn.example.test/delta-acquisition", "url_mobile": "", "title": "Delta Materials 宣布收购一家晶圆厂", "seendate": "20241016T090000Z", "socialimage": "", "domain": "cn.example.test", "language": "Chinese", "sourcecountry": "China"},
+  {"url": "https://market.example.test/chip-demand", "url_mobile": "", "title": "Chip demand outlook improves for the fourth quarter", "seendate": "20241017T100000Z", "socialimage": "", "domain": "market.example.test", "language": "English", "sourcecountry": "United Kingdom"}
+]}
