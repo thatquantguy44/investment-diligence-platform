@@ -61,6 +61,7 @@ quality.
 - [x] Recipient grouping by UEI, unreviewed Pipeline 01 match candidates, classification tags, and recipient HHI.
 - [x] Non-publishing `validate-usaspending` command; local and PostgreSQL publication tested with fixtures.
 - [x] Five defense/technology sector presets (`config/award_sectors.yaml`, `--sector`) and an `--awarding-agency` filter.
+- [x] Quarterly obligation trends, de-obligation flags, and new-entrant flags.
 - [ ] Live API validation and reviewer sign-off for the selected sectors.
 - [ ] One non-US portal after source-policy review; SAM.gov solicitations.
 
@@ -70,6 +71,7 @@ quality.
 - [x] Rule-based headline event candidates with exact evidence spans and recorded extractor identity.
 - [x] Evidence-support, candidate-status, and extractor gates; entity mention edges and event signal counts.
 - [x] Non-publishing `validate-gdelt` command; local and PostgreSQL publication tested with fixtures.
+- [x] Five sector query presets aligned with Pipeline 04 and award recipients accepted as `--entities`.
 - [ ] Live API validation.
 - [ ] Local LLM extractor, labeled evaluation set, and canary comparison against the rules.
 - [ ] Primary-source follow-up allowlist and analyst review for verified events.

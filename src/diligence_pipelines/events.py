@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Protocol, Sequence
+
+import yaml
 
 from diligence_pipelines.entities.matching import find_entity_mentions
 
@@ -58,6 +61,14 @@ EVENT_RULES: dict[str, dict[str, list[str]]] = {
     },
 }
 RULES_VERSION = "event_rules.v1"
+
+
+def load_event_query(name: str, path: Path) -> str:
+    """Return one named GDELT query preset from the event queries YAML file."""
+    sectors = (yaml.safe_load(path.read_text()) or {}).get("sectors") or {}
+    if name not in sectors or not sectors[name].get("query"):
+        raise ValueError(f"Unknown event sector {name!r}; choose from: {', '.join(sorted(sectors))}")
+    return str(sectors[name]["query"])
 
 
 @dataclass(frozen=True)

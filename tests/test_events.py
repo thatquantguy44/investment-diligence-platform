@@ -98,3 +98,44 @@ def test_gdelt_fetch_builds_bounded_artlist_query(monkeypatch):
     assert seen["maxrecords"] == ["250"]
     assert seen["mode"] == ["artlist"] and "timespan" not in seen
     assert capture.request.source_id == "gdelt_doc"
+
+
+def test_award_recipients_can_seed_event_entity_edges(tmp_path):
+    import json
+
+    from diligence_pipelines.awards import derive_award_outputs
+    from diligence_pipelines.sources.usaspending import load_usaspending_fixture, normalize_awards
+
+    bundle = load_usaspending_fixture(Path("tests/fixtures/usaspending_awards.json").read_bytes(), source_uri="file:///fixture")
+    awards = normalize_awards(bundle["awards"].payload, "run-1", "source:awards", "contracts")
+    recipients = derive_award_outputs(awards, [])["recipient_entities"]
+    path = tmp_path / "recipient_entities.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for row in recipients))
+    candidates = load_entity_candidates(path)
+    assert ("uei:SYNUEI000001", "ACME ROBOTICS PTE LTD") in candidates
+    documents = normalize_gdelt_articles(FIXTURE.read_bytes(), "run-1", "source:gdelt")
+    outputs = derive_event_outputs(documents, RuleBasedEventExtractor(), entity_candidates=candidates, content_sha256="abc")
+    assert {edge["entity_id"] for edge in outputs["entity_event_edges"]} == {"uei:SYNUEI000001", "uei:SYNUEI000002"}
+
+
+def test_event_query_presets_match_award_sectors_and_compose_with_query(monkeypatch):
+    import sys
+
+    import yaml
+
+    from diligence_pipelines import cli
+    from diligence_pipelines.events import load_event_query
+
+    award_sectors = set(yaml.safe_load(Path("config/award_sectors.yaml").read_text())["sectors"])
+    event_sectors = set(yaml.safe_load(Path("config/event_queries.yaml").read_text())["sectors"])
+    assert event_sectors == award_sectors
+    for name in event_sectors:
+        query = load_event_query(name, Path("config/event_queries.yaml"))
+        assert query.count("(") == query.count(")") and query.count('"') % 2 == 0, name
+
+    captured = {}
+    monkeypatch.setattr(cli, "validate_gdelt", lambda options, settings: captured.update(options) or 0)
+    monkeypatch.setattr(sys, "argv", ["diligence-pipelines", "validate-gdelt", "--sector", "defense_rd", "--query", "Anduril"])
+    assert cli.main() == 0
+    assert captured["query"] == load_event_query("defense_rd", Path("config/event_queries.yaml")) + " Anduril"
+    assert captured["sector"] == "defense_rd"

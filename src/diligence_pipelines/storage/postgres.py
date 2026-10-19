@@ -7,7 +7,7 @@ from diligence_pipelines.sources.base import RawCapture
 
 
 # Fixed allowlists: table names are interpolated into SQL, so they must never come from input.
-AWARD_TABLES = ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration")
+AWARD_TABLES = ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration", "obligation_trends")
 EVENT_TABLES = ("source_documents", "event_candidates", "entity_event_edges", "event_signal_counts")
 
 class PostgresStorage:

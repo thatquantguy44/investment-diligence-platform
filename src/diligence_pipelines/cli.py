@@ -15,7 +15,7 @@ from diligence_pipelines.awards import award_coverage_report, derive_award_outpu
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.docs_validation import validate_docs
 from diligence_pipelines.entities import load_entity_candidates
-from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report
+from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report, load_event_query
 from diligence_pipelines.quality import validate_awards, validate_entities, validate_event_candidates, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
 from diligence_pipelines.sources import RawCapture, SourceRequest, comtrade_response_metadata, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact
@@ -524,7 +524,7 @@ def _collect_public_awards(options: dict, settings: Settings, run_id: str) -> di
         if award_id in seen:
             events.extend(normalize_award_transactions(capture.payload, award_id, run_id, f"source:{capture.content_sha256}"))
     entity_candidates = load_entity_candidates(options["entities"]) if options["entities"] else None
-    outputs = derive_award_outputs(awards, events, entity_candidates=entity_candidates)
+    outputs = derive_award_outputs(awards, events, entity_candidates=entity_candidates, window_start=options["start_date"])
     coverage = award_coverage_report(awards, events, source_metadata, set(transaction_captures) & seen)
     quality = validate_awards(awards, events, coverage, source_metadata)
     captures = [*award_captures, *(transaction_captures[award_id] for award_id in sorted(transaction_captures))]
@@ -619,7 +619,7 @@ def run_multilingual_events(options: dict, settings: Settings) -> int:
         "materialization_id": run_id,
         "pipeline_id": "05_multilingual_events",
         "as_of": datetime.now(timezone.utc).isoformat(),
-        "partition_keys": {key: options[key] for key in ("query", "timespan", "start_datetime", "end_datetime", "source_language", "source_country", "max_records")},
+        "partition_keys": {key: options[key] for key in ("sector", "query", "timespan", "start_datetime", "end_datetime", "source_language", "source_country", "max_records")},
         "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": f"source:{capture.content_sha256}"},
         "extractor": asdict(result["extractor"]),
         "source_metadata": result["source_metadata"],
@@ -651,7 +651,7 @@ def validate_gdelt(options: dict, settings: Settings) -> int:
 
 
 def _add_award_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--sector", help="Pipeline 04 named sector preset from config/award_sectors.yaml; explicit filters are added to it")
+    parser.add_argument("--sector", help="Pipeline 04/05 sector preset (config/award_sectors.yaml or config/event_queries.yaml); explicit filters are added to it")
     parser.add_argument("--award-group", choices=("contracts", "grants"), help="Pipeline 04 USAspending award type group; defaults to the sector's group or contracts")
     parser.add_argument("--awarding-agency", action="append", default=[], help="Pipeline 04 top-tier awarding agency name, e.g. 'Department of Defense'")
     parser.add_argument("--start-date", help="Pipeline 04 action-date window start, YYYY-MM-DD")
@@ -696,12 +696,18 @@ def _award_options(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 
 
 def _event_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
-    if not args.events_fixture and not args.query:
-        parser.error("Pipeline 05 requires --query for live collection")
+    query = args.query or ""
+    if args.sector:
+        try:
+            query = " ".join(part for part in (load_event_query(args.sector, ROOT / "config" / "event_queries.yaml"), args.query) if part)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if not args.events_fixture and not query:
+        parser.error("Pipeline 05 requires --sector or --query for live collection")
     if bool(args.start_datetime) != bool(args.end_datetime):
         parser.error("Pipeline 05 --start-datetime and --end-datetime must be supplied together")
     return {
-        "query": args.query or "", "max_records": args.max_results, "timespan": args.timespan,
+        "sector": args.sector, "query": query, "max_records": args.max_results, "timespan": args.timespan,
         "start_datetime": args.start_datetime, "end_datetime": args.end_datetime,
         "source_language": args.source_language, "source_country": args.source_country,
         "events_fixture": args.events_fixture, "entities": args.entities,
@@ -727,6 +733,7 @@ def main() -> int:
     validate_events_parser = subparsers.add_parser("validate-gdelt", help="Validate a GDELT pull and event extraction without publishing")
     _add_event_arguments(validate_events_parser)
     validate_events_parser.add_argument("--query")
+    validate_events_parser.add_argument("--sector", help="Pipeline 05 sector preset from config/event_queries.yaml")
     validate_events_parser.add_argument("--max-results", type=int, default=75)
     validate_events_parser.add_argument("--entities", type=Path, help="Pipeline 01 entities JSONL for entity mention edges")
     download_parser = subparsers.add_parser("download-uspto-bulk")

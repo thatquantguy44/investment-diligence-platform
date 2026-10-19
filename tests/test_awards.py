@@ -149,3 +149,21 @@ def test_cli_merges_sector_preset_with_explicit_filters(monkeypatch):
     assert captured["award_group"] == "contracts"
     assert captured["awarding_agencies"] == ["Department of Defense"]
     assert captured["sector"] == "defense_electronics_sensing"
+
+
+def test_deobligations_new_entrants_and_quarterly_trends():
+    _, awards, events = _load()
+    outputs = derive_award_outputs(awards, events, window_start="2024-02-01")
+    deobligation = next(event for event in outputs["award_events"] if event["award_event_id"] == "CONT_TX_SYN0003_1")
+    assert deobligation["is_deobligation"] is True
+    recipients = {row["recipient_key"]: row for row in outputs["recipient_entities"]}
+    assert recipients["uei:SYNUEI000002"]["deobligation_count"] == 1
+    assert recipients["uei:SYNUEI000002"]["deobligated_usd"] == -250000.0
+    assert recipients["uei:SYNUEI000002"]["new_entrant_in_window"] is True
+    assert recipients["uei:SYNUEI000001"]["new_entrant_in_window"] is False  # first base obligation 2024-01-15
+    assert recipients["name:unrelatedfoundryservicesllc"]["new_entrant_in_window"] is None  # no base date
+    trends = {(row["scope"], row["scope_key"], row["quarter"]): row for row in outputs["obligation_trends"]}
+    assert trends[("recipient", "uei:SYNUEI000001", "2024-Q1")]["net_obligation_usd"] == 4000000.0
+    assert trends[("recipient", "uei:SYNUEI000001", "2024-Q2")]["net_obligation_usd"] == 2000000.0
+    assert trends[("classification", "contracts:334413", "2024-Q1")]["net_obligation_usd"] == 6000000.0
+    assert trends[("classification", "contracts:334413", "2024-Q4")]["deobligation_usd"] == -250000.0

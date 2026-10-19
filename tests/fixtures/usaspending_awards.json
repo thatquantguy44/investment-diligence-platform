@@ -21,7 +21,8 @@
     "CONT_AWD_SYN0003_8900_-NONE-_-NONE-": {
       "page_metadata": {"page": 1, "hasNext": false},
       "results": [
-        {"id": "CONT_TX_SYN0003_0", "type": "C", "type_description": "Purchase Order", "action_date": "2024-02-25", "action_type": null, "action_type_description": null, "modification_number": "0", "description": "SYNTHETIC BASE AWARD", "federal_action_obligation": 2000000.0}
+        {"id": "CONT_TX_SYN0003_0", "type": "C", "type_description": "Purchase Order", "action_date": "2024-02-25", "action_type": null, "action_type_description": null, "modification_number": "0", "description": "SYNTHETIC BASE AWARD", "federal_action_obligation": 2000000.0},
+        {"id": "CONT_TX_SYN0003_1", "type": "C", "type_description": "Purchase Order", "action_date": "2024-11-04", "action_type": "E", "action_type_description": "SUPPLEMENTAL AGREEMENT FOR WORK WITHIN SCOPE", "modification_number": "P00001", "description": "SYNTHETIC PARTIAL DE-OBLIGATION", "federal_action_obligation": -250000.0}
       ]
     }
   }

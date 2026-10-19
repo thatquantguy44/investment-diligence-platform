@@ -54,6 +54,24 @@ The fixture is synthetic. Use `DILIGENCE_STORAGE_BACKEND=postgres` to publish to
 `diligence.source_documents`, `diligence.event_candidates`,
 `diligence.entity_event_edges`, and `diligence.event_signal_counts`.
 
+## Sector presets and award recipients
+
+`--sector <name>` loads a GDELT query from
+[`config/event_queries.yaml`](../../config/event_queries.yaml). The five
+presets mirror the Pipeline 04 defense and technology sectors; `--query` adds
+an extra AND term (for example a company name).
+
+`--entities` accepts either a Pipeline 01 `entities.jsonl` or a Pipeline 04
+`recipient_entities.jsonl`. With recipients, edges point at the recipient key
+(`uei:...`), which shows award recipients appearing in funding, acquisition, or
+regulatory headlines. Those edges are unreviewed name mentions.
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli run 05_multilingual_events \
+  --sector defense_electronics_sensing --timespan 30d \
+  --entities .data/curated/04_public_awards/<run_id>/recipient_entities.jsonl
+```
+
 ## Non-publishing validation and live path
 
 ```bash

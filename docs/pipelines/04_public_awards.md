@@ -15,10 +15,11 @@ rate limits, and field semantics.
 | Output | Grain | Notes |
 | --- | --- | --- |
 | `awards` | One row per `generated_internal_id` | Obligated, outlay, and (always null) announced amounts kept separate; performance and base-obligation dates; agency hierarchy; NAICS/PSC/assistance listing; `source_url` to the original record |
-| `award_events` | One row per USAspending transaction | Modification number, action type, action date, federal action obligation; fetched for the top `--max-transaction-awards` awards |
-| `recipient_entities` | One row per recipient UEI (falls back to recipient hash, then normalized name) | Name variants, award count, total obligation, unreviewed Pipeline 01 match candidates when `--entities` is supplied |
+| `award_events` | One row per USAspending transaction | Modification number, action type, action date, federal action obligation, `is_deobligation` (negative obligation); fetched for the top `--max-transaction-awards` awards |
+| `recipient_entities` | One row per recipient UEI (falls back to recipient hash, then normalized name) | Name variants, award count, total obligation, first base-obligation date, `new_entrant_in_window`, de-obligation count and amount, unreviewed Pipeline 01 match candidates when `--entities` is supplied |
 | `technology_program_tags` | One row per award × classification code | Source classifications only (`naics`, `psc`, `assistance_listing`); no inferred technology labels |
 | `recipient_concentration` | One row per award group × NAICS (or PSC) code | Recipient HHI on obligations, top-recipient share |
+| `obligation_trends` | One row per recipient or classification × calendar quarter | Net obligation, de-obligation total, and action count from `award_events` |
 
 `solicitations` from the Spec 0001 output list is not implemented: USAspending
 does not publish solicitations, and SAM.gov opportunities need a separate key
@@ -112,6 +113,8 @@ responses but has not yet been run against the real API from this repository.
 
 - Recipient obligation share = recipient obligation / total obligation for `(award group, NAICS or PSC code)`.
 - Recipient HHI = `sum(recipient share²) × 10,000`; null when total obligation is zero.
+- Quarterly net obligation = `sum(federal_action_obligation)` by action-date calendar quarter, per recipient and per classification; de-obligation total sums the negative actions only.
+- `new_entrant_in_window` = the recipient's earliest base-obligation date in this pull is on or after `--start-date`; null when no base date is known.
 
 Publication is blocked when award IDs repeat, required fields or source
 references are missing, a transaction references an award outside the run, or
@@ -124,3 +127,6 @@ the API returns an error. A truncated result (more matches than
 - Obligations are commitments and can be de-obligated; outlays are disbursements. Neither is an announced amount.
 - Recipient-to-entity matches are unreviewed name-similarity candidates; they never confirm a Pipeline 01 entity.
 - The award search returns current award state. Use `award_events` for the amendment history.
+- Trends cover only awards whose transaction history was fetched (`--max-transaction-awards`), so they understate sector totals.
+- `new_entrant_in_window` is relative to this pull, not to the recipient's full federal history.
+- `recipient_entities.jsonl` can be passed to Pipeline 05 as `--entities` to link award recipients to news events.

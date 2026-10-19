@@ -34,7 +34,11 @@ LEGAL_SUFFIXES = re.compile(r"[\s,]+(inc|incorporated|corp|corporation|co|compan
 
 
 def load_entity_candidates(path: Path) -> list[tuple[str, str]]:
-    """Read (entity_id, canonical_name) pairs from a Pipeline 01 entities JSONL file."""
+    """Read (id, name) pairs from Pipeline 01 entities or Pipeline 04 recipient_entities JSONL.
+
+    Recipients are keyed by their ``recipient_key`` (``uei:...``), so an edge to one is a
+    lead about an award recipient, not a confirmed Pipeline 01 entity.
+    """
     candidates = []
     for line in path.read_text().splitlines():
         if not line.strip():
@@ -42,6 +46,8 @@ def load_entity_candidates(path: Path) -> list[tuple[str, str]]:
         row = json.loads(line)
         if row.get("entity_id") and row.get("canonical_name"):
             candidates.append((row["entity_id"], row["canonical_name"]))
+        elif row.get("recipient_key") and row.get("recipient_name"):
+            candidates.append((row["recipient_key"], row["recipient_name"]))
     return candidates
 
 

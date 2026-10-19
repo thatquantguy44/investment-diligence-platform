@@ -91,16 +91,16 @@ def test_pipeline_04_award_fixture_publishes_all_outputs(tmp_path: Path):
     }
     assert run_public_awards(options, Settings(data_root=tmp_path)) == 0
     output_root = tmp_path / "curated/04_public_awards"
-    for name in ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration", "product_manifest"):
+    for name in ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration", "obligation_trends", "product_manifest"):
         assert list(output_root.glob(f"*/{name}.jsonl")), name
     manifest = __import__("json").loads(next(output_root.glob("*/product_manifest.jsonl")).read_text())
-    assert manifest["record_counts"]["award_events"] == 3
+    assert manifest["record_counts"]["award_events"] == 4
     assert len(manifest["lineage"]) == 3
 
 
 def test_pipeline_05_event_fixture_publishes_and_validation_does_not_write(tmp_path: Path, capsys):
     options = {
-        "query": "", "max_records": 75, "timespan": "7d", "start_datetime": None, "end_datetime": None,
+        "sector": None, "query": "", "max_records": 75, "timespan": "7d", "start_datetime": None, "end_datetime": None,
         "source_language": None, "source_country": None, "events_fixture": Path("tests/fixtures/gdelt_artlist.json"),
         "entities": Path("tests/fixtures/entity_graph.jsonl"),
     }
