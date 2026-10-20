@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Pipeline 01 uses the SEC submissions API to resolve a company CIK into a source-backed entity record. The current bounded adapter fetches one company-submissions JSON document per CIK; it does not crawl filings.
+Pipeline 01 uses the SEC submissions API to resolve a company CIK into a source-backed entity record. The entity adapter fetches one company-submissions JSON document per CIK; it does not crawl filings. The financials adapter fetches one `companyfacts` JSON document per CIK (see below).
 
 ## Access and credentials
 
@@ -26,6 +26,19 @@ https://data.sec.gov/submissions/CIK##########.json
 
 The CIK must be normalized to ten digits with leading zeroes. Pipeline 01 validates CIK syntax before making a request, preserves the raw JSON response, and extracts the company name, jurisdiction, CIK, tickers, and exchanges.
 
+## Company facts endpoint
+
+```text
+https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json
+```
+
+One request returns every XBRL fact a filer has reported, which can be several
+megabytes for large issuers, so the adapter uses a 90-second timeout and keeps
+only the bounded concept set in `sources/sec.py` (`CONCEPT_GROUPS`). Each fact
+appears once per filing that reports it. `fy` and `fp` describe the filing, not
+the period a value covers; use `period_end` and `filed_at`. Unknown CIKs return a
+non-JSON error body, which blocks publication.
+
 ## Run examples
 
 Live single-company run:
@@ -47,7 +60,8 @@ PYTHONPATH=src python -m diligence_pipelines.cli run 01_entity_graph \
 - Retries are bounded and apply to transport errors and HTTP 429/5xx responses.
 - Raw captures are content-addressed and are not overwritten on rerun.
 - SEC CIK identity is source evidence, not a complete ownership graph.
-- The current adapter does not fetch filing contents or infer beneficial ownership.
+- The adapters do not fetch filing documents or infer beneficial ownership.
+- XBRL values are as reported by the filer; companies tag items differently, so a missing concept group may sit under a tag outside the bounded set.
 
 ## Official references
 

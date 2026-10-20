@@ -148,3 +148,37 @@ def validate_event_candidates(documents: list[dict], candidates: list[dict], cov
             details=(source_metadata or {}).get("error") or ("Response metadata unavailable" if not source_metadata else None),
         ),
     ]
+
+
+def validate_financial_facts(facts: list[dict], metrics: list[dict], coverage: dict | None = None, metadata_by_cik: dict[str, dict] | None = None) -> list[QualityResult]:
+    fact_ids = [fact.get("fact_id") for fact in facts]
+    duplicate_count = len(fact_ids) - len(set(fact_ids))
+    missing_required = sum(not fact.get("fact_id") or not fact.get("entity_id") or not fact.get("period_end") or fact.get("value") is None for fact in facts)
+    missing_source_refs = sum(not fact.get("source_record_id") or not fact.get("accession_number") for fact in facts)
+    # A figure cannot be public before the period it covers has ended.
+    filed_before_period = sum(bool(fact.get("filed_at")) and fact["filed_at"] < fact["period_end"] for fact in facts)
+    unfiled = sum(not fact.get("filed_at") for fact in facts)
+    known = set(fact_ids)
+    orphan_inputs = sum(fact_id not in known for metric in metrics for fact_id in metric.get("input_fact_ids", []))
+    errors = [f"{cik}: {meta['error']}" for cik, meta in (metadata_by_cik or {}).items() if meta.get("error")]
+    return [
+        QualityResult(check_id="financial_fact_schema_valid", status="fail" if missing_required else "pass", observed_value=missing_required, threshold=0),
+        QualityResult(check_id="financial_fact_identifier_unique", status="fail" if duplicate_count else "pass", observed_value=duplicate_count, threshold=0),
+        QualityResult(check_id="financial_fact_source_ref_present", status="fail" if missing_source_refs else "pass", observed_value=missing_source_refs, threshold=0),
+        QualityResult(check_id="financial_fact_filed_after_period", status="fail" if filed_before_period else "pass", observed_value=filed_before_period, threshold=0, details="Facts filed before their period ended" if filed_before_period else None),
+        QualityResult(check_id="financial_fact_filing_date_present", status="fail" if unfiled else "pass", observed_value=unfiled, threshold=0, details="Point-in-time use needs a filing date" if unfiled else None),
+        QualityResult(check_id="financial_metric_inputs_traceable", status="fail" if orphan_inputs else "pass", observed_value=orphan_inputs, threshold=0),
+        QualityResult(check_id="financial_result_count", status="warn" if not facts else "pass", observed_value=len(facts), details="No annual USD facts returned" if not facts else None),
+        QualityResult(check_id="financial_coverage_report_present", status="pass" if coverage else "fail", observed_value=1 if coverage else 0, threshold=1),
+        QualityResult(
+            check_id="financial_ciks_have_facts",
+            status="warn" if coverage and coverage.get("ciks_without_facts") else "pass",
+            observed_value=coverage.get("ciks_without_facts", []) if coverage else None,
+        ),
+        QualityResult(
+            check_id="financial_source_metadata_present",
+            status="fail" if not metadata_by_cik or errors else "pass",
+            observed_value=len(metadata_by_cik or {}),
+            details="; ".join(errors) if errors else ("Response metadata unavailable" if not metadata_by_cik else None),
+        ),
+    ]

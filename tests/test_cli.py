@@ -114,3 +114,20 @@ def test_pipeline_05_event_fixture_publishes_and_validation_does_not_write(tmp_p
         assert list(output_root.glob(f"*/{name}.jsonl")), name
     manifest = __import__("json").loads(next(output_root.glob("*/product_manifest.jsonl")).read_text())
     assert manifest["extractor"]["extractor_id"] == "rule_based"
+
+
+def test_pipeline_01_facts_fixture_publishes_and_validation_does_not_write(tmp_path: Path, capsys):
+    from diligence_pipelines.cli import run_sec_facts, validate_sec_facts
+
+    fixture = Path("tests/fixtures/sec_companyfacts.json")
+    validation_root = tmp_path / "validation"
+    assert validate_sec_facts(["0"], fixture, Settings(data_root=validation_root)) == 0
+    assert __import__("json").loads(capsys.readouterr().out)["write_mode"] == "none"
+    assert not validation_root.exists()
+    assert run_sec_facts(["0"], fixture, Settings(data_root=tmp_path)) == 0
+    output_root = tmp_path / "curated/01_entity_graph"
+    for name in ("financial_facts", "financial_metrics", "product_manifest"):
+        assert list(output_root.glob(f"*/{name}.jsonl")), name
+    manifest = __import__("json").loads(next(output_root.glob("*/product_manifest.jsonl")).read_text())
+    assert manifest["product_id"] == "company_financials"
+    assert manifest["record_counts"] == {"financial_facts": 13, "financial_metrics": 3}

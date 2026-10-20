@@ -15,10 +15,12 @@ from diligence_pipelines.awards import award_coverage_report, derive_award_outpu
 from diligence_pipelines.contracts import Entity
 from diligence_pipelines.docs_validation import validate_docs
 from diligence_pipelines.entities import load_entity_candidates
+from diligence_pipelines.financials import derive_financial_metrics, financial_coverage_report
 from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report, load_event_query
-from diligence_pipelines.quality import validate_awards, validate_entities, validate_event_candidates, validate_patent_records, validate_research_works, validate_trade_flows
+from diligence_pipelines.quality import validate_awards, validate_entities, validate_event_candidates, validate_financial_facts, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
 from diligence_pipelines.sources import RawCapture, SourceRequest, comtrade_response_metadata, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact
+from diligence_pipelines.sources.sec import ANNUAL_FORMS, fetch_sec_companyfacts, load_sec_facts_fixture, normalize_financial_facts, sec_facts_metadata
 from diligence_pipelines.sources.gdelt import fetch_gdelt_articles, gdelt_response_metadata, load_gdelt_fixture, normalize_gdelt_articles
 from diligence_pipelines.sources.usaspending import award_search_metadata, fetch_award_search, fetch_award_transactions, load_usaspending_fixture, normalize_award_transactions, normalize_awards
 from diligence_pipelines.storage import build_storage
@@ -495,6 +497,94 @@ def validate_comtrade(period: str, reporter_code: str, partner_code: str, flow_c
     return 2 if failed else 0
 
 
+def _collect_sec_facts(ciks: list[str], facts_fixture: Path | None, settings: Settings, run_id: str) -> dict:
+    captures = []
+    facts: list[dict] = []
+    metadata_by_cik: dict[str, dict] = {}
+    for cik in ciks:
+        normalized = normalize_cik(cik)
+        if facts_fixture:
+            capture = load_sec_facts_fixture(facts_fixture.read_bytes(), source_uri=facts_fixture.resolve().as_uri())
+        else:
+            capture = fetch_sec_companyfacts(normalized, settings.sec_user_agent)
+        captures.append(capture)
+        metadata = sec_facts_metadata(capture.payload)
+        metadata_by_cik[normalized] = metadata
+        if metadata["error"]:
+            continue
+        if metadata["cik"] != normalized and not facts_fixture:
+            metadata["error"] = f"Response CIK {metadata['cik']} does not match requested CIK {normalized}"
+            continue
+        facts.extend(normalize_financial_facts(capture.payload, run_id, f"source:{capture.content_sha256}", ANNUAL_FORMS))
+    if facts_fixture:
+        metadata_by_cik = {metadata["cik"]: metadata for metadata in metadata_by_cik.values() if metadata["cik"]}
+        ciks = list(metadata_by_cik)
+    metrics = derive_financial_metrics(facts)
+    requested = [normalize_cik(cik) for cik in ciks]
+    coverage = financial_coverage_report(facts, metrics, metadata_by_cik, requested)
+    quality = validate_financial_facts(facts, metrics, coverage, metadata_by_cik)
+    return {"captures": captures, "facts": facts, "metrics": metrics, "coverage": coverage, "quality": quality, "metadata_by_cik": metadata_by_cik}
+
+
+def run_sec_facts(ciks: list[str], facts_fixture: Path | None, settings: Settings) -> int:
+    run_id = str(uuid.uuid4())
+    storage = build_storage(settings)
+    result = _collect_sec_facts(ciks, facts_fixture, settings, run_id)
+    raw_uris = [storage.write_raw(capture) for capture in result["captures"]]
+    quality = result["quality"]
+    if any(item.status == "fail" for item in quality):
+        print(json.dumps({"run_id": run_id, "status": "blocked", "quality": [item.model_dump(mode="json") for item in quality]}, indent=2))
+        return 2
+    product = {
+        "product_id": "company_financials",
+        "contract_version": "1.0.0",
+        "materialization_id": run_id,
+        "pipeline_id": "01_entity_graph",
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "partition_keys": {"source_id": "sec_edgar", "ciks": result["coverage"]["requested_ciks"], "forms": list(ANNUAL_FORMS)},
+        "lineage": [{"raw_object_uri": uri, "content_sha256": capture.content_sha256, "source_record_id": f"source:{capture.content_sha256}", "source_uri": capture.request.uri} for uri, capture in zip(raw_uris, result["captures"])],
+        "source_metadata": result["metadata_by_cik"],
+        "location": f"storage://curated/01_entity_graph/{run_id}/financial_facts",
+        "quality": [item.model_dump(mode="json") for item in quality],
+        "coverage": result["coverage"],
+        "record_counts": {"financial_facts": len(result["facts"]), "financial_metrics": len(result["metrics"])},
+        "limitations": result["coverage"]["limitations"],
+    }
+    storage.publish_financial_product(run_id, result["facts"], product, result["metrics"])
+    print(json.dumps({"run_id": run_id, "status": "published", **product["record_counts"], "coverage": result["coverage"]}, indent=2))
+    return 0
+
+
+def validate_sec_facts(ciks: list[str], facts_fixture: Path | None, settings: Settings) -> int:
+    """Validate SEC company facts without writing raw or curated data."""
+    result = _collect_sec_facts(ciks, facts_fixture, settings, f"validation-{uuid.uuid4()}")
+    failed = [item for item in result["quality"] if item.status == "fail"]
+    print(json.dumps({
+        "status": "fail" if failed else "pass",
+        "write_mode": "none",
+        "content_sha256": [capture.content_sha256 for capture in result["captures"]],
+        "source_metadata": result["metadata_by_cik"],
+        "record_counts": {"financial_facts": len(result["facts"]), "financial_metrics": len(result["metrics"])},
+        "coverage": result["coverage"],
+        "quality": [item.model_dump(mode="json") for item in result["quality"]],
+    }, indent=2))
+    return 2 if failed else 0
+
+
+def _facts_ciks(args: argparse.Namespace, parser: argparse.ArgumentParser) -> list[str]:
+    if args.cik and args.watchlist:
+        parser.error("Provide only one of --cik or --watchlist")
+    if args.cik:
+        ciks = [args.cik]
+    elif args.watchlist:
+        ciks = [entry["cik"] for entry in load_watchlist(args.watchlist)]
+    elif args.facts_fixture:
+        ciks = ["0"]  # replaced by the fixture's own CIK
+    else:
+        parser.error("SEC facts require --cik or --watchlist")
+    return ciks
+
+
 def _collect_public_awards(options: dict, settings: Settings, run_id: str) -> dict:
     if options["awards_fixture"]:
         fixture = options["awards_fixture"]
@@ -726,6 +816,10 @@ def main() -> int:
     validate_trade_parser.add_argument("--flow-code", default="M,X")
     validate_trade_parser.add_argument("--hs-code", action="append", default=[])
     validate_trade_parser.add_argument("--trade-fixture", type=Path)
+    validate_facts_parser = subparsers.add_parser("validate-sec-facts", help="Validate SEC XBRL company facts without publishing")
+    validate_facts_parser.add_argument("--cik")
+    validate_facts_parser.add_argument("--watchlist", type=Path)
+    validate_facts_parser.add_argument("--facts-fixture", type=Path)
     validate_awards_parser = subparsers.add_parser("validate-usaspending", help="Validate a USAspending pull without publishing")
     _add_award_arguments(validate_awards_parser)
     validate_awards_parser.add_argument("--max-results", type=int, default=100)
@@ -787,6 +881,8 @@ def main() -> int:
     run_parser.add_argument("--input", type=Path)
     run_parser.add_argument("--cik", help="Fetch one SEC EDGAR company-submissions record")
     run_parser.add_argument("--watchlist", type=Path, help="YAML watchlist with entities containing cik and optional lei")
+    run_parser.add_argument("--facts-only", action="store_true", help="Pipeline 01: publish SEC XBRL company facts and metrics for --cik/--watchlist instead of entities")
+    run_parser.add_argument("--facts-fixture", type=Path, help="Synthetic SEC companyfacts response for offline Pipeline 01 facts tests")
     run_parser.add_argument("--query", help="OpenAlex search query for Pipeline 02")
     run_parser.add_argument("--max-results", type=int, default=25)
     run_parser.add_argument("--openalex-fixture", type=Path, help="Synthetic OpenAlex response for fully offline Pipeline 02 tests")
@@ -809,6 +905,8 @@ def main() -> int:
         return validate_docs(ROOT)
     if args.command == "validate-comtrade":
         return validate_comtrade(args.period, args.reporter_code, args.partner_code, args.flow_code, args.hs_code, args.trade_fixture, Settings.from_env())
+    if args.command == "validate-sec-facts":
+        return validate_sec_facts(_facts_ciks(args, parser), args.facts_fixture, Settings.from_env())
     if args.command == "validate-usaspending":
         return validate_usaspending(_award_options(args, parser), Settings.from_env())
     if args.command == "validate-gdelt":
@@ -851,6 +949,10 @@ def main() -> int:
         if args.input or args.cik or args.watchlist:
             parser.error("Pipeline 05 does not accept Pipeline 01 inputs")
         return run_multilingual_events(_event_options(args, parser), Settings.from_env())
+    if args.pipeline_id == "01_entity_graph" and args.facts_only:
+        if args.input:
+            parser.error("--facts-only does not accept --input")
+        return run_sec_facts(_facts_ciks(args, parser), args.facts_fixture, Settings.from_env())
     if args.pipeline_id != "01_entity_graph":
         parser.error("Implemented pipelines are 01_entity_graph, 02_technology_talent, 03_trade_exposure, 04_public_awards, and 05_multilingual_events")
     if sum(value is not None for value in (args.input, args.cik, args.watchlist)) != 1:

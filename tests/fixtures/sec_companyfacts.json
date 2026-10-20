@@ -1,0 +1,227 @@
+{
+ "cik": 999001,
+ "entityName": "Synthetic Systems Inc",
+ "facts": {
+  "us-gaap": {
+   "Revenues": {
+    "label": "Revenues",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2022-12-31",
+       "val": 1000000000,
+       "accn": "0000999001-23-000010",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-02-20",
+       "start": "2022-01-01"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 1200000000,
+       "accn": "0000999001-24-000011",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-02-21",
+       "start": "2023-01-01"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 1150000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19",
+       "start": "2023-01-01"
+      },
+      {
+       "end": "2024-12-31",
+       "val": 1500000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19",
+       "start": "2024-01-01"
+      },
+      {
+       "end": "2024-03-31",
+       "val": 300000000,
+       "accn": "0000999001-24-000020",
+       "fy": 2024,
+       "fp": "Q1",
+       "form": "10-Q",
+       "filed": "2024-05-01",
+       "start": "2024-01-01"
+      }
+     ]
+    }
+   },
+   "ResearchAndDevelopmentExpense": {
+    "label": "Research and Development Expense",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2022-12-31",
+       "val": 150000000,
+       "accn": "0000999001-23-000010",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-02-20",
+       "start": "2022-01-01"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 200000000,
+       "accn": "0000999001-24-000011",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-02-21",
+       "start": "2023-01-01"
+      },
+      {
+       "end": "2024-12-31",
+       "val": 270000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19",
+       "start": "2024-01-01"
+      }
+     ]
+    }
+   },
+   "PaymentsToAcquirePropertyPlantAndEquipment": {
+    "label": "Capex",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2023-12-31",
+       "val": 60000000,
+       "accn": "0000999001-24-000011",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-02-21",
+       "start": "2023-01-01"
+      },
+      {
+       "end": "2024-12-31",
+       "val": 90000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19",
+       "start": "2024-01-01"
+      }
+     ]
+    }
+   },
+   "NetIncomeLoss": {
+    "label": "Net Income (Loss)",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2024-12-31",
+       "val": 180000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19",
+       "start": "2024-01-01"
+      }
+     ]
+    }
+   },
+   "OperatingIncomeLoss": {
+    "label": "Operating Income (Loss)",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2024-12-31",
+       "val": 225000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19",
+       "start": "2024-01-01"
+      }
+     ]
+    }
+   },
+   "Assets": {
+    "label": "Assets",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2023-12-31",
+       "val": 2000000000,
+       "accn": "0000999001-24-000011",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-02-21"
+      },
+      {
+       "end": "2024-12-31",
+       "val": 2400000000,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19"
+      }
+     ]
+    }
+   },
+   "AccountsPayableCurrent": {
+    "label": "Not collected",
+    "description": "synthetic",
+    "units": {
+     "USD": [
+      {
+       "end": "2024-12-31",
+       "val": 1,
+       "accn": "0000999001-25-000012",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-02-19"
+      }
+     ]
+    }
+   }
+  },
+  "dei": {
+   "EntityCommonStockSharesOutstanding": {
+    "label": "Shares",
+    "units": {
+     "shares": [
+      {
+       "end": "2025-02-10",
+       "val": 100,
+       "accn": "0000999001-25-000012",
+       "form": "10-K",
+       "filed": "2025-02-19"
+      }
+     ]
+    }
+   }
+  }
+ }
+}
