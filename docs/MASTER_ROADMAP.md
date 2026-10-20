@@ -78,9 +78,10 @@ record alone.
 - Pipeline 04: run live validation for the five selected defense/technology sector presets, record sign-off, then consider
   one non-US portal only after source-policy review. SAM.gov solicitations need
   their own key and review.
-- Pipeline 05: add a local LLM extractor behind `EventExtractor`, a labeled
-  rule evaluation set, primary-source follow-up for an allowlist, and an analyst
-  review step for verified events.
+- Pipeline 05: the local LLM extractor and evaluation harness are built; next
+  are a real labeled headline set, a measured comparison against the rules,
+  primary-source follow-up for an allowlist, and an analyst review step for
+  verified events.
 
 ### 6. Later expansion — Deferred
 

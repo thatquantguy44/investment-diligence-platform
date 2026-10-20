@@ -46,3 +46,8 @@ USASPENDING_TRANSACTIONS_URL: "https://api.usaspending.gov/api/v2/transactions/"
 
 # Pipeline 05 GDELT DOC 2.0 endpoint; no key required. Keep request volume low.
 GDELT_DOC_API_URL: "https://api.gdeltproject.org/api/v2/doc/doc"
+
+# Pipeline 05 optional local LLM event extractor (Ollama-compatible server).
+# Headlines are only sent to loopback hosts unless --llm-allow-remote is passed.
+LLM_BASE_URL: "http://localhost:11434"
+LLM_EVENT_MODEL: ""
