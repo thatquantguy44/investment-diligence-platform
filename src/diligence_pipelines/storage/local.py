@@ -123,5 +123,8 @@ class LocalStorage:
     def publish_award_product(self, run_id: str, awards: list[dict], product: dict, outputs: dict[str, list[dict]]) -> str:
         return self._publish_outputs("04_public_awards", run_id, {"awards": awards, **outputs}, product, "awards")
 
+    def publish_financial_product(self, run_id: str, facts: list[dict], product: dict, metrics: list[dict]) -> str:
+        return self._publish_outputs("01_entity_graph", run_id, {"financial_facts": facts, "financial_metrics": metrics}, product, "financial_facts")
+
     def publish_event_product(self, run_id: str, documents: list[dict], product: dict, outputs: dict[str, list[dict]]) -> str:
         return self._publish_outputs("05_multilingual_events", run_id, {"source_documents": documents, **outputs}, product, "source_documents")

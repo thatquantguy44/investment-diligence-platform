@@ -14,7 +14,7 @@ Pipeline `01_entity_graph` has a lightweight real path:
 4. Run schema, identifier, and source-reference quality gates.
 5. Publish an entity record and product manifest to local storage or PostgreSQL.
 
-The local fixture path remains the deterministic test path. SEC XBRL facts and ownership relationships are not implemented yet; those are follow-on enhancements to Pipeline 01.
+The local fixture path remains the deterministic test path. `run 01_entity_graph --facts-only` additionally publishes SEC XBRL `financial_facts` (point-in-time, restatements retained) and annual `financial_metrics` (R&D and capex intensity, operating margin, revenue growth); see [`docs/pipelines/01_entity_graph.md`](pipelines/01_entity_graph.md#company-financials-sec-xbrl). Ownership relationships (Form 4, 13D/G, 13F) are not implemented yet.
 
 Pipeline `04_public_awards` (pilot) pulls a bounded USAspending contract or
 grant search (date window plus NAICS/PSC/keyword filter), fetches modification
@@ -57,6 +57,7 @@ The adapter creates a `diligence` schema in the configured database:
 - `diligence.entities`: normalized entity records keyed by entity and run.
 - `diligence.product_manifests`: product identity, contract version, materialization, quality, and lineage.
 - `diligence.patent_index`: searchable USPTO ODP bulk-release snapshot.
+- Pipeline 01 financials: `diligence.financial_facts` and `diligence.financial_metrics`, keyed by `(record_id, run_id)`.
 - `diligence.patent_catalog`: deduplicated canonical patent view keyed by
   `patent_id`.
 - `diligence.patent_records`: run-scoped Pipeline 02 evidence keyed by
@@ -148,7 +149,7 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 
 ## Current validation result
 
-The repository’s local test suite passes with 76 tests. Pipelines 04 and 05
+The repository’s local test suite passes with 82 tests. Pipelines 04 and 05
 publish from their synthetic fixtures to local storage and to a scratch
 PostgreSQL 16 `IDP` database (all ten new tables populated). Their live
 USAspending and GDELT paths were not run because the development sandbox had

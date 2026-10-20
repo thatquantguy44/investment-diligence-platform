@@ -40,7 +40,8 @@ quality.
 
 ## Pipeline 01 follow-ons
 
-- SEC XBRL facts and selected ownership relationships.
+- [x] SEC XBRL company facts and annual financial metrics (`--facts-only`, fixture-tested; live SEC validation open).
+- [ ] Selected ownership relationships (Form 4, 13D/G, 13F).
 - Normalized source-record tables for SQL joins.
 - More reviewed match candidates where needed by downstream use cases.
 

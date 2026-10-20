@@ -61,7 +61,8 @@ record alone.
 
 ### 4. Complete Pipeline 01 follow-ons — Planned
 
-- SEC XBRL facts and selected ownership relationships.
+- SEC XBRL facts are implemented (`--facts-only`); live validation against the SEC API is still open.
+- Selected ownership relationships (Form 4, 13D/G, 13F).
 - Normalized source-record joins for downstream consumers.
 - Additional reviewed entity-match candidates where the business case requires them.
 

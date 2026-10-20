@@ -9,6 +9,7 @@ from diligence_pipelines.sources.base import RawCapture
 # Fixed allowlists: table names are interpolated into SQL, so they must never come from input.
 AWARD_TABLES = ("awards", "award_events", "recipient_entities", "technology_program_tags", "recipient_concentration", "obligation_trends")
 EVENT_TABLES = ("source_documents", "event_candidates", "entity_event_edges", "event_signal_counts")
+FINANCIAL_TABLES = ("financial_facts", "financial_metrics")
 
 class PostgresStorage:
     """PostgreSQL storage adapter for raw captures and curated Pipeline 01 output."""
@@ -203,7 +204,7 @@ class PostgresStorage:
                     PRIMARY KEY (record_id, run_id)
                 )
             """)
-            for table in (*AWARD_TABLES, *EVENT_TABLES):
+            for table in (*AWARD_TABLES, *EVENT_TABLES, *FINANCIAL_TABLES):
                 cursor.execute(f"""
                     CREATE TABLE IF NOT EXISTS diligence.{table} (
                         record_id text NOT NULL,
@@ -495,6 +496,9 @@ class PostgresStorage:
 
     def publish_award_product(self, run_id: str, awards: list[dict[str, Any]], product: dict[str, Any], outputs: dict[str, list[dict[str, Any]]]) -> str:
         return self._publish_outputs(run_id, {"awards": awards, **outputs}, AWARD_TABLES, product)
+
+    def publish_financial_product(self, run_id: str, facts: list[dict[str, Any]], product: dict[str, Any], metrics: list[dict[str, Any]]) -> str:
+        return self._publish_outputs(run_id, {"financial_facts": facts, "financial_metrics": metrics}, FINANCIAL_TABLES, product)
 
     def publish_event_product(self, run_id: str, documents: list[dict[str, Any]], product: dict[str, Any], outputs: dict[str, list[dict[str, Any]]]) -> str:
         return self._publish_outputs(run_id, {"source_documents": documents, **outputs}, EVENT_TABLES, product)

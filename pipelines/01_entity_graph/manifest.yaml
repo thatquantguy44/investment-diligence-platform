@@ -14,9 +14,9 @@ sources:
     terms_reviewed: false
     max_requests_per_minute: 30
     allowed_domains: [api.gleif.org, www.gleif.org]
-outputs: [entities, entity_aliases, entity_relationships, filing_observations, unresolved_match_candidates]
+outputs: [entities, entity_aliases, entity_relationships, filing_observations, unresolved_match_candidates, financial_facts, financial_metrics]
 schedule: manual
 partition_by: [source_id, retrieval_date]
 sensitivity: public
 model_use: none
-quality_checks: [schema_valid, identifier_unique, source_ref_present, watchlist_deduplicated, raw_capture_present]
+quality_checks: [schema_valid, identifier_unique, source_ref_present, watchlist_deduplicated, raw_capture_present, financial_fact_schema_valid, financial_fact_identifier_unique, financial_fact_source_ref_present, financial_fact_filed_after_period, financial_fact_filing_date_present, financial_metric_inputs_traceable, financial_coverage_report_present, financial_source_metadata_present]
