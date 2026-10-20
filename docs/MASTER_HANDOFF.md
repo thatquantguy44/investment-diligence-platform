@@ -31,7 +31,8 @@ event candidates with a rule-based extractor. Every candidate carries an exact
 evidence span that a quality gate re-checks; nothing is promoted to a verified
 event. Five `--sector` query presets mirror the Pipeline 04 sectors, and
 `--entities` accepts Pipeline 04 recipients to link award recipients to news.
-It publishes `source_documents`, `event_candidates`,
+`--extractor llm` swaps in an opt-in local-LLM extractor under the same
+evidence gates. It publishes `source_documents`, `event_candidates`,
 `entity_event_edges`, and `event_signal_counts`. See
 [`docs/pipelines/05_multilingual_events.md`](pipelines/05_multilingual_events.md).
 
@@ -139,13 +140,16 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
    validation loop in the
    [approval worksheet](pipelines/04_public_awards.md#approval-worksheet-sector-filter)
    and record reviewer sign-off before broader live pulls.
-9. Pipeline 05: add a local LLM extractor behind the `EventExtractor` protocol,
-   build a small labeled evaluation set for the rules, and design the analyst
-   review step that promotes candidates to verified events.
+9. Pipeline 05: a local-LLM extractor (`--extractor llm`) and an evaluation
+   command (`evaluate-event-extractor`) are built but untested against a real
+   model. Label a few hundred real GDELT headlines, run the evaluation with
+   `--compare-rules` and a `--min-f1` gate, and only then consider switching.
+   The analyst review step that promotes candidates to verified events is still
+   to be designed.
 
 ## Current validation result
 
-The repository’s local test suite passes with 71 tests. Pipelines 04 and 05
+The repository’s local test suite passes with 82 tests. Pipelines 04 and 05
 publish from their synthetic fixtures to local storage and to a scratch
 PostgreSQL 16 `IDP` database (all ten new tables populated). Their live
 USAspending and GDELT paths were not run because the development sandbox had

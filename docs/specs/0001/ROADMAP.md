@@ -74,7 +74,8 @@ quality.
 - [x] Non-publishing `validate-gdelt` command; local and PostgreSQL publication tested with fixtures.
 - [x] Five sector query presets aligned with Pipeline 04 and award recipients accepted as `--entities`.
 - [ ] Live API validation.
-- [ ] Local LLM extractor, labeled evaluation set, and canary comparison against the rules.
+- [x] Local LLM extractor (`--extractor llm`), evaluation harness with rules comparison and `--min-f1` canary gate; fake-server tested only.
+- [ ] Labeled set of real headlines and a measured comparison against the rules with a real model.
 - [ ] Primary-source follow-up allowlist and analyst review for verified events.
 
 ## Later Spec 0001 phases

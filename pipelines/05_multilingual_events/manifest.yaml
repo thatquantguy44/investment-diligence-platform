@@ -13,5 +13,5 @@ outputs: [source_documents, event_candidates, entity_event_edges, event_signal_c
 schedule: manual
 partition_by: [query, timespan, source_language, retrieval_date]
 sensitivity: public
-model_use: rule_based_extractor_only
-quality_checks: [document_identifier_unique, document_result_count, event_candidate_identifier_unique, event_document_ref_valid, event_evidence_supported, event_extractor_recorded, event_candidates_unverified, event_coverage_report_present, event_source_metadata_present]
+model_use: optional_local_llm_extractor
+quality_checks: [document_identifier_unique, document_result_count, event_candidate_identifier_unique, event_document_ref_valid, event_evidence_supported, event_extractor_recorded, event_candidates_unverified, event_coverage_report_present, event_extractor_health, event_source_metadata_present]

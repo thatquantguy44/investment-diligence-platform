@@ -16,6 +16,8 @@ from diligence_pipelines.contracts import Entity
 from diligence_pipelines.docs_validation import validate_docs
 from diligence_pipelines.entities import load_entity_candidates
 from diligence_pipelines.financials import derive_financial_metrics, financial_coverage_report
+from diligence_pipelines.event_evaluation import compare_extractors, evaluate_extractor, load_labeled_examples
+from diligence_pipelines.llm_events import LLMEventExtractor, OllamaClient
 from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report, load_event_query
 from diligence_pipelines.quality import validate_awards, validate_entities, validate_event_candidates, validate_financial_facts, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
@@ -671,6 +673,34 @@ def validate_usaspending(options: dict, settings: Settings) -> int:
     return 2 if failed else 0
 
 
+def build_event_extractor(kind: str, settings: Settings, options: dict):
+    """Return the rule-based extractor or a local-LLM extractor; the LLM is opt-in."""
+    if kind == "rules":
+        return RuleBasedEventExtractor()
+    if kind == "llm":
+        client = OllamaClient(options.get("llm_model") or settings.llm_event_model, options.get("llm_url") or settings.llm_base_url, allow_remote=bool(options.get("llm_allow_remote")))
+        return LLMEventExtractor(client)
+    raise ValueError(f"Unknown extractor: {kind}")
+
+
+def evaluate_event_extractor(labels: Path, kind: str, compare_rules: bool, min_f1: float | None, output: Path | None, settings: Settings, options: dict) -> int:
+    """Score an extractor on labeled headlines; nothing is fetched or published."""
+    examples = load_labeled_examples(labels)
+    report = {"labels": str(labels), "result": evaluate_extractor(build_event_extractor(kind, settings, options), examples)}
+    if compare_rules and kind != "rules":
+        report["baseline"] = evaluate_extractor(RuleBasedEventExtractor(), examples)
+        report["comparison"] = compare_extractors(report["result"], report["baseline"])
+    micro_f1 = report["result"]["micro"]["f1"]
+    report["status"] = "fail" if min_f1 is not None and (micro_f1 or 0.0) < min_f1 else "pass"
+    report["min_f1"] = min_f1
+    text = json.dumps(report, indent=2)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text + "\n")
+    print(text)
+    return 2 if report["status"] == "fail" else 0
+
+
 def _collect_events(options: dict, settings: Settings, run_id: str) -> dict:
     if options["events_fixture"]:
         fixture = options["events_fixture"]
@@ -685,9 +715,11 @@ def _collect_events(options: dict, settings: Settings, run_id: str) -> dict:
     source_metadata = gdelt_response_metadata(capture.payload)
     documents = normalize_gdelt_articles(capture.payload, run_id, f"source:{capture.content_sha256}")
     entity_candidates = load_entity_candidates(options["entities"]) if options["entities"] else None
-    extractor = RuleBasedEventExtractor()
+    extractor = build_event_extractor(options.get("extractor", "rules"), settings, options)
     outputs = derive_event_outputs(documents, extractor, entity_candidates=entity_candidates, content_sha256=capture.content_sha256)
     coverage = event_coverage_report(documents, outputs, source_metadata)
+    if hasattr(extractor, "stats"):
+        coverage["extractor_stats"] = dict(extractor.stats)
     quality = validate_event_candidates(documents, outputs["event_candidates"], coverage, source_metadata)
     return {"capture": capture, "documents": documents, "outputs": outputs, "coverage": coverage, "quality": quality, "source_metadata": source_metadata, "extractor": extractor.info}
 
@@ -709,7 +741,7 @@ def run_multilingual_events(options: dict, settings: Settings) -> int:
         "materialization_id": run_id,
         "pipeline_id": "05_multilingual_events",
         "as_of": datetime.now(timezone.utc).isoformat(),
-        "partition_keys": {key: options[key] for key in ("sector", "query", "timespan", "start_datetime", "end_datetime", "source_language", "source_country", "max_records")},
+        "partition_keys": {key: options.get(key) for key in ("extractor", "sector", "query", "timespan", "start_datetime", "end_datetime", "source_language", "source_country", "max_records")},
         "lineage": {"raw_object_uri": raw_uri, "content_sha256": capture.content_sha256, "source_record_id": f"source:{capture.content_sha256}"},
         "extractor": asdict(result["extractor"]),
         "source_metadata": result["source_metadata"],
@@ -753,6 +785,13 @@ def _add_award_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--awards-fixture", type=Path, help="Synthetic USAspending bundle for offline Pipeline 04 tests")
 
 
+def _add_llm_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--extractor", choices=("rules", "llm"), default="rules", help="Pipeline 05 event extractor; llm uses a local Ollama-compatible server")
+    parser.add_argument("--llm-model", help="Pipeline 05 LLM model name; defaults to LLM_EVENT_MODEL")
+    parser.add_argument("--llm-url", help="Pipeline 05 LLM server URL; defaults to LLM_BASE_URL (http://localhost:11434)")
+    parser.add_argument("--llm-allow-remote", action="store_true", help="Allow sending headlines to a non-loopback LLM server")
+
+
 def _add_event_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--timespan", default="7d", help="Pipeline 05 GDELT relative window, e.g. 24h, 7d, 3m")
     parser.add_argument("--start-datetime", help="Pipeline 05 GDELT window start, YYYYMMDDHHMMSS; overrides --timespan")
@@ -760,6 +799,7 @@ def _add_event_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-language", help="Pipeline 05 GDELT sourcelang filter, e.g. english, chinese")
     parser.add_argument("--source-country", help="Pipeline 05 GDELT sourcecountry filter, e.g. us, ch")
     parser.add_argument("--events-fixture", type=Path, help="Synthetic GDELT artlist response for offline Pipeline 05 tests")
+    _add_llm_arguments(parser)
 
 
 def _award_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
@@ -801,6 +841,7 @@ def _event_options(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         "start_datetime": args.start_datetime, "end_datetime": args.end_datetime,
         "source_language": args.source_language, "source_country": args.source_country,
         "events_fixture": args.events_fixture, "entities": args.entities,
+        "extractor": args.extractor, "llm_model": args.llm_model, "llm_url": args.llm_url, "llm_allow_remote": args.llm_allow_remote,
     }
 
 
@@ -820,6 +861,12 @@ def main() -> int:
     validate_facts_parser.add_argument("--cik")
     validate_facts_parser.add_argument("--watchlist", type=Path)
     validate_facts_parser.add_argument("--facts-fixture", type=Path)
+    evaluate_parser = subparsers.add_parser("evaluate-event-extractor", help="Score an event extractor against labeled headlines; nothing is fetched or published")
+    evaluate_parser.add_argument("--labels", type=Path, required=True, help="JSONL of {title, language, events}")
+    _add_llm_arguments(evaluate_parser)
+    evaluate_parser.add_argument("--compare-rules", action="store_true", help="Also score the rule-based baseline and list disagreements")
+    evaluate_parser.add_argument("--min-f1", type=float, help="Exit non-zero when micro F1 is below this threshold (canary gate)")
+    evaluate_parser.add_argument("--output", type=Path, help="Write the report JSON here")
     validate_awards_parser = subparsers.add_parser("validate-usaspending", help="Validate a USAspending pull without publishing")
     _add_award_arguments(validate_awards_parser)
     validate_awards_parser.add_argument("--max-results", type=int, default=100)
@@ -907,10 +954,18 @@ def main() -> int:
         return validate_comtrade(args.period, args.reporter_code, args.partner_code, args.flow_code, args.hs_code, args.trade_fixture, Settings.from_env())
     if args.command == "validate-sec-facts":
         return validate_sec_facts(_facts_ciks(args, parser), args.facts_fixture, Settings.from_env())
+    if args.command == "evaluate-event-extractor":
+        try:
+            return evaluate_event_extractor(args.labels, args.extractor, args.compare_rules, args.min_f1, args.output, Settings.from_env(), {"llm_model": args.llm_model, "llm_url": args.llm_url, "llm_allow_remote": args.llm_allow_remote})
+        except (ValueError, RuntimeError) as exc:
+            parser.error(str(exc))
     if args.command == "validate-usaspending":
         return validate_usaspending(_award_options(args, parser), Settings.from_env())
     if args.command == "validate-gdelt":
-        return validate_gdelt(_event_options(args, parser), Settings.from_env())
+        try:
+            return validate_gdelt(_event_options(args, parser), Settings.from_env())
+        except (ValueError, RuntimeError) as exc:
+            parser.error(str(exc))
     if args.command == "download-uspto-bulk":
         return download_uspto_bulk(args.url, args.output, Settings.from_env())
     if args.command == "search-uspto-odp":
@@ -948,7 +1003,10 @@ def main() -> int:
     if args.pipeline_id == "05_multilingual_events":
         if args.input or args.cik or args.watchlist:
             parser.error("Pipeline 05 does not accept Pipeline 01 inputs")
-        return run_multilingual_events(_event_options(args, parser), Settings.from_env())
+        try:
+            return run_multilingual_events(_event_options(args, parser), Settings.from_env())
+        except (ValueError, RuntimeError) as exc:
+            parser.error(str(exc))
     if args.pipeline_id == "01_entity_graph" and args.facts_only:
         if args.input:
             parser.error("--facts-only does not accept --input")

@@ -27,20 +27,72 @@ published: verification needs analyst review or primary-source confirmation.
 `workforce_reduction`, `regulatory_action`, `government_award`,
 `product_launch`, `leadership_change`, `legal_dispute`, `insolvency`.
 
-Rules (`event_rules.v1` in `src/diligence_pipelines/events.py`) are English
+Rule-based extraction (`event_rules.v1` in `src/diligence_pipelines/events.py`) are English
 first, with a small set of Spanish, French, German, Chinese, and Japanese terms.
 Documents with no candidate are counted in the coverage report; they are not
 evidence that no event occurred.
 
-## Extractor contract and the LLM step
+## Extractors
 
-`RuleBasedEventExtractor` is the reference implementation of the
-`EventExtractor` protocol. The product manifest and every candidate record the
-extractor's `extractor_id`, `model_name`, `model_revision`, `prompt_version`,
-and `schema_version`. A local LLM extractor can replace it by returning the
-same candidate shape; the `event_evidence_supported` gate rejects any excerpt
-that does not match the source text at its locator. An LLM extractor is not yet
-implemented.
+`--extractor rules` (default) runs `RuleBasedEventExtractor`. `--extractor llm`
+runs `LLMEventExtractor` against a local Ollama-compatible server
+(`--llm-model` or `LLM_EVENT_MODEL`; `--llm-url` or `LLM_BASE_URL`, default
+`http://localhost:11434`). Both implement the `EventExtractor` protocol and
+produce the same candidate shape under the same gates. The manifest and every
+candidate record `extractor_id`, `model_name`, `model_revision`,
+`prompt_version`, and `schema_version`.
+
+The LLM extractor is built so a model error cannot become a fact:
+
+- The prompt (`event_extraction_prompt.v1`) asks for JSON with an allowed
+  `event_type`, an `excerpt` copied from the headline, and a `confidence`.
+- The model never supplies positions. The extractor finds the excerpt in the
+  headline itself and stores the headline's own text and offsets, so the
+  `event_evidence_supported` gate holds by construction.
+- Output is rejected and counted (not published) when the excerpt is not in the
+  headline, the event type is unknown, the item is malformed, or the response
+  is not valid JSON. At most one candidate per headline and event type is kept.
+- Requests use temperature 0 and a fixed seed. The model's digest is read from
+  the server and recorded as `model_revision`; the run fails if the model is
+  not installed.
+- Headlines are untrusted: they are fenced in the prompt with an instruction to
+  ignore embedded instructions, and the output checks above limit what an
+  injected headline could do to a quote from itself in an allowed event type.
+- Headlines are only sent to loopback hosts unless `--llm-allow-remote` is
+  passed.
+- Per-run `extractor_stats` (calls, failures, rejections by reason, accepted)
+  go into the coverage report. The `event_extractor_health` gate warns when
+  some calls fail and blocks publication when every call fails.
+
+Candidates stay `candidate` regardless of extractor or confidence.
+
+## Evaluating an extractor before trusting it
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli evaluate-event-extractor \
+  --labels tests/fixtures/event_eval_seed.jsonl \
+  --extractor llm --llm-model <model> --compare-rules --min-f1 0.85 \
+  --output .data/eval/llm_vs_rules.json
+```
+
+Nothing is fetched or published. The report gives per-event-type and
+per-language precision, recall, and F1, the mismatched headlines, and, with
+`--compare-rules`, the headlines where the LLM and the rules disagree and the
+micro-F1 change. `--min-f1` makes the command exit non-zero below a threshold,
+so it can gate a model or prompt change.
+
+**The bundled seed set is not a benchmark.** `tests/fixtures/event_eval_seed.jsonl`
+has 24 synthetic headlines that the author wrote knowing the rules, so the
+rules score about 0.95 on it; it only exercises the harness. It does show two
+known rule weaknesses: a false positive on "merger wave" commentary and a miss
+on French "lance". Before choosing between rules and a model, label a few
+hundred real headlines pulled from GDELT in the same JSONL format
+(`{"title", "language", "events": [...]}`), including headlines with no event.
+
+**Not yet verified against a real model.** The extractor, client, and
+evaluation are tested with a fake client and a fake Ollama HTTP server; no real
+model has been run, and the sandbox had no local model server. Model quality,
+latency, and cost per headline are unmeasured.
 
 ## Offline fixture replay
 
@@ -83,8 +135,9 @@ PYTHONPATH=src python -m diligence_pipelines.cli run 05_multilingual_events \
   --entities .data/curated/01_entity_graph/<run_id>/entities.jsonl
 ```
 
-The live connector has been unit-tested against mocked responses but has not
-yet been run against the real API from this repository.
+The live GDELT connector has been unit-tested against mocked responses but has
+not yet been run against the real API from this repository. Add
+`--extractor llm --llm-model <model>` to either command to use the local model.
 
 ## Quality gates
 
@@ -97,5 +150,6 @@ or GDELT returns an error message instead of JSON.
 
 - GDELT is a discovery index, not a complete news archive or an authority on the truth of a claim.
 - Candidates are extracted from headlines only; article bodies are not fetched.
+- An LLM can paraphrase, over-read a headline, or miss events in low-resource languages; evaluate it on labeled real headlines first.
 - Report time (GDELT first-seen) is not event time; event time stays null unless a source states it.
 - Entity edges are exact name mentions and remain unreviewed; common names can produce false links.

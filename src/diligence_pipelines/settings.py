@@ -32,6 +32,8 @@ class Settings:
     usaspending_award_search_url: str = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
     usaspending_transactions_url: str = "https://api.usaspending.gov/api/v2/transactions/"
     gdelt_doc_api_url: str = "https://api.gdeltproject.org/api/v2/doc/doc"
+    llm_base_url: str = "http://localhost:11434"
+    llm_event_model: str = ""
 
     @property
     def comtrade_api_keys(self) -> tuple[str, ...]:
@@ -80,4 +82,6 @@ class Settings:
             usaspending_award_search_url=value("USASPENDING_AWARD_SEARCH_URL", "https://api.usaspending.gov/api/v2/search/spending_by_award/"),
             usaspending_transactions_url=value("USASPENDING_TRANSACTIONS_URL", "https://api.usaspending.gov/api/v2/transactions/"),
             gdelt_doc_api_url=value("GDELT_DOC_API_URL", "https://api.gdeltproject.org/api/v2/doc/doc"),
+            llm_base_url=value("LLM_BASE_URL", "http://localhost:11434"),
+            llm_event_model=value("LLM_EVENT_MODEL", ""),
         )
