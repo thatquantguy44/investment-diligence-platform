@@ -131,6 +131,18 @@ def validate_event_candidates(documents: list[dict], candidates: list[dict], cov
     premature = sum(candidate.get("status") != "candidate" for candidate in candidates)
     candidate_ids = [candidate.get("event_candidate_id") for candidate in candidates]
     duplicate_candidates = len(candidate_ids) - len(set(candidate_ids))
+    stats = (coverage or {}).get("extractor_stats")
+    health = []
+    if stats:
+        failures = stats.get("client_failures", 0) + stats.get("parse_failures", 0)
+        total_failure = stats.get("calls", 0) > 0 and failures >= stats["calls"]
+        health = [QualityResult(
+            check_id="event_extractor_health",
+            status="fail" if total_failure else "warn" if failures else "pass",
+            observed_value=failures,
+            threshold=0,
+            details=f"{failures} of {stats.get('calls', 0)} extractor calls failed or returned unparseable output" if failures else None,
+        )]
     return [
         QualityResult(check_id="document_identifier_unique", status="fail" if duplicate_documents else "pass", observed_value=duplicate_documents, threshold=0),
         QualityResult(check_id="document_result_count", status="warn" if not documents else "pass", observed_value=len(documents), details="No documents returned" if not documents else None),
@@ -140,6 +152,7 @@ def validate_event_candidates(documents: list[dict], candidates: list[dict], cov
         QualityResult(check_id="event_extractor_recorded", status="fail" if missing_extractor else "pass", observed_value=missing_extractor, threshold=0),
         QualityResult(check_id="event_candidates_unverified", status="fail" if premature else "pass", observed_value=premature, threshold=0, details="Extracted events must stay candidates until reviewed" if premature else None),
         QualityResult(check_id="event_coverage_report_present", status="pass" if coverage else "fail", observed_value=1 if coverage else 0, threshold=1),
+        *health,
         QualityResult(
             check_id="event_source_metadata_present",
             status="fail" if not source_metadata or source_metadata.get("error") else "pass",
