@@ -5,6 +5,132 @@ import './styles.css';
 
 const emptyGraph = { nodes: [], edges: [] };
 
+const guidedStories = [
+  {
+    id: 'identity-lineage',
+    eyebrow: 'Pipeline 01 · Identity',
+    title: 'Verify a company identity',
+    summary: 'Follow a public filing source into a canonical, reviewable company record.',
+    steps: [
+      {
+        title: 'Begin with the source',
+        body: 'The trail starts at SEC EDGAR, so the company identity can always be traced back to a public system of record.',
+        resolve: (graph) => findNode(graph, [(node) => node.type === 'source' && node.name.toLowerCase().includes('sec')]),
+      },
+      {
+        title: 'Move to the canonical entity',
+        body: 'The normalized company record provides the stable identifier that downstream diligence signals can share.',
+        resolve: (graph) => findNode(graph, [
+          (node) => node.type === 'entity' && node.name.toLowerCase().includes('apple'),
+          (node) => node.type === 'entity',
+        ]),
+      },
+      {
+        title: 'Inspect the review boundary',
+        body: 'Aliases and captures retain their evidence status. A source-derived identity is visible without implying ownership or control.',
+        resolve: (graph) => findNode(graph, [
+          (node) => node.type === 'capture' && node.kind.toLowerCase().includes('alias'),
+          (node) => node.type === 'capture',
+          (node) => node.type === 'entity',
+        ]),
+      },
+    ],
+  },
+  {
+    id: 'research-network',
+    eyebrow: 'Pipeline 02 · Research',
+    title: 'Trace a research network',
+    summary: 'Move from an institution to its publications and the people named in source metadata.',
+    steps: [
+      {
+        title: 'Find the institution',
+        body: 'Institution metadata creates a defensible starting point for exploring a research footprint.',
+        resolve: (graph) => findNode(graph, [
+          (node) => node.type === 'institution' && node.name.toLowerCase().includes('nvidia'),
+          (node) => node.type === 'institution',
+        ]),
+      },
+      {
+        title: 'Open a connected publication',
+        body: 'The graph reveals the underlying research record instead of reducing the relationship to an unexplained score.',
+        resolve: (graph) => {
+          const institution = guidedStories[1].steps[0].resolve(graph);
+          return findNeighbor(graph, institution?.id, (node) => node.type === 'research')
+            || highestDegreeNode(graph, (node) => node.type === 'research');
+        },
+      },
+      {
+        title: 'See the human network',
+        body: 'Authorship is presented as source evidence—not as an unsupported claim about current employment.',
+        resolve: (graph) => {
+          const research = guidedStories[1].steps[1].resolve(graph);
+          return findNeighbor(graph, research?.id, (node) => node.type === 'person')
+            || findNode(graph, [(node) => node.type === 'person']);
+        },
+      },
+    ],
+  },
+  {
+    id: 'technology-evidence',
+    eyebrow: 'Pipeline 02 · Patents',
+    title: 'Explore technology evidence',
+    summary: 'Trace a patent from the source index through the record and its reported relationships.',
+    steps: [
+      {
+        title: 'Start with the patent source',
+        body: 'USPTO-derived records remain connected to their source boundary and retrieval lineage.',
+        resolve: (graph) => findNode(graph, [
+          (node) => node.type === 'source' && node.name.toLowerCase().includes('uspto'),
+          (node) => node.type === 'source',
+        ]),
+      },
+      {
+        title: 'Inspect a patent record',
+        body: 'The record carries its patent identifier, run, and source reference so the signal is reproducible.',
+        resolve: (graph) => findNode(graph, [
+          (node) => node.type === 'patent' && node.name.toLowerCase().includes('battery'),
+          (node) => node.type === 'patent',
+        ]),
+      },
+      {
+        title: 'Keep claims appropriately bounded',
+        body: 'Inventor and assignee records are shown as reported relationships. Candidate links stay visually distinct until reviewed.',
+        resolve: (graph) => {
+          const patent = guidedStories[2].steps[1].resolve(graph);
+          return findNeighbor(graph, patent?.id, (node) => node.type === 'person') || patent;
+        },
+      },
+    ],
+  },
+];
+
+function findNode(graph, predicates) {
+  for (const predicate of predicates) {
+    const match = graph.nodes.find(predicate);
+    if (match) return match;
+  }
+  return null;
+}
+
+function findNeighbor(graph, nodeId, predicate) {
+  if (!nodeId) return null;
+  const neighborIds = new Set(graph.edges.flatMap((edge) => {
+    if (edge.a === nodeId) return [edge.b];
+    if (edge.b === nodeId) return [edge.a];
+    return [];
+  }));
+  return graph.nodes.find((node) => neighborIds.has(node.id) && predicate(node)) || null;
+}
+
+function highestDegreeNode(graph, predicate) {
+  const degree = new Map();
+  graph.edges.forEach((edge) => {
+    degree.set(edge.a, (degree.get(edge.a) || 0) + 1);
+    degree.set(edge.b, (degree.get(edge.b) || 0) + 1);
+  });
+  return graph.nodes.filter(predicate).sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))[0] || null;
+}
+
 function App() {
   const [graph, setGraph] = useState(fixtureGraph);
   const [mode, setMode] = useState('fixture');
@@ -13,9 +139,15 @@ function App() {
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
+  const [storyPickerOpen, setStoryPickerOpen] = useState(false);
+  const [activeStoryId, setActiveStoryId] = useState(null);
+  const [storyStep, setStoryStep] = useState(0);
   const normalizedQuery = query.trim().toLowerCase();
   const nodeMap = useMemo(() => Object.fromEntries(graph.nodes.map((node) => [node.id, node])), [graph]);
   const selectedNode = selected ? nodeMap[selected] : null;
+  const activeStory = guidedStories.find((story) => story.id === activeStoryId) || null;
+  const activeStoryStep = activeStory?.steps[storyStep] || null;
+  const guidedTarget = useMemo(() => activeStoryStep?.resolve(graph) || null, [activeStoryStep, graph]);
 
   useEffect(() => {
     if (mode !== 'postgres') return;
@@ -33,6 +165,20 @@ function App() {
       .catch((error) => { if (!cancelled) { setGraph(emptyGraph); setApiState('error'); setApiError(error.message || 'Start the local knowledge API and try again.'); } });
     return () => { cancelled = true; };
   }, [mode]);
+
+  useEffect(() => {
+    if (!activeStory || !guidedTarget) return;
+    setSelected(guidedTarget.id);
+    setFilter('all');
+    setQuery('');
+  }, [activeStory, guidedTarget]);
+
+  useEffect(() => {
+    if (!storyPickerOpen) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setStoryPickerOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [storyPickerOpen]);
 
   const visible = (node) => {
     const matchesQuery = !normalizedQuery || `${node.name} ${node.kind}`.toLowerCase().includes(normalizedQuery);
@@ -57,6 +203,23 @@ function App() {
     if (nextMode === 'fixture') { setGraph(fixtureGraph); setApiState('idle'); setApiError(''); setSelected(null); }
   };
 
+  const startStory = (storyId) => {
+    setActiveStoryId(storyId);
+    setStoryStep(0);
+    setStoryPickerOpen(false);
+  };
+
+  const exitStory = () => {
+    setActiveStoryId(null);
+    setStoryStep(0);
+  };
+
+  const advanceStory = () => {
+    if (!activeStory) return;
+    if (storyStep === activeStory.steps.length - 1) exitStory();
+    else setStoryStep((current) => current + 1);
+  };
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -78,10 +241,13 @@ function App() {
         <span className="mode-label">Data:</span>
         <button className={mode === 'fixture' ? 'active' : ''} onClick={() => setDataMode('fixture')}>Embedded fixture</button>
         <button className={mode === 'postgres' ? 'active live-button' : ''} onClick={() => setDataMode('postgres')}>Live PostgreSQL</button>
+        <button className={`demo-button ${activeStory ? 'active' : ''}`} onClick={() => setStoryPickerOpen((open) => !open)} aria-expanded={storyPickerOpen}>▶ Guided demo</button>
         <input value={query} onChange={(event) => setQuery(event.target.value)} className="search" type="search" placeholder="Search the evidence universe…" aria-label="Search graph nodes" />
       </nav>
 
       <main className="stage">
+        {storyPickerOpen && <StoryPicker stories={guidedStories} onStart={startStory} onClose={() => setStoryPickerOpen(false)} />}
+        {activeStory && <StoryPresenter story={activeStory} step={storyStep} target={guidedTarget} onBack={() => setStoryStep((current) => Math.max(0, current - 1))} onNext={advanceStory} onExit={exitStory} />}
         {mode === 'postgres' && apiState !== 'ready' && <div className={`connection-banner ${apiState === 'error' ? 'error' : ''}`}><strong>{apiState === 'loading' ? 'Loading live PostgreSQL graph…' : 'Live PostgreSQL is unavailable'}</strong><span>{apiState === 'error' ? apiError : 'The fixture graph is intentionally hidden while live data is loading.'}</span></div>}
         <svg viewBox="0 0 1120 590" role="img" aria-label="Interactive knowledge graph of Pipeline 01 and Pipeline 02 evidence relationships">
           <defs><radialGradient id="core"><stop offset="0" stopColor="#8c7dff" stopOpacity=".32" /><stop offset="1" stopColor="#8c7dff" stopOpacity="0" /></radialGradient></defs>
@@ -103,7 +269,7 @@ function App() {
             })}
           </g>
           <g className="nodes">
-            {graph.nodes.map((node) => <Node key={node.id} node={node} dimmed={isDimmed(node)} selected={selected === node.id} onSelect={setSelected} />)}
+            {graph.nodes.map((node) => <Node key={node.id} node={node} dimmed={isDimmed(node)} selected={selected === node.id} guided={guidedTarget?.id === node.id} onSelect={setSelected} />)}
           </g>
         </svg>
         <EvidencePanel node={selectedNode} />
@@ -116,11 +282,34 @@ function App() {
   );
 }
 
+function StoryPicker({ stories, onStart, onClose }) {
+  return <section className="story-picker" role="dialog" aria-modal="true" aria-labelledby="story-picker-title">
+    <div className="story-picker-heading"><div><div className="panel-title">Presenter mode</div><h2 id="story-picker-title">Choose a guided story</h2></div><button className="icon-button" onClick={onClose} aria-label="Close guided stories">×</button></div>
+    <p>Each story focuses the live graph while keeping every claim tied to inspectable evidence.</p>
+    <div className="story-list">{stories.map((story, index) => <button className="story-card" key={story.id} onClick={() => onStart(story.id)}><span className="story-number">0{index + 1}</span><span><small>{story.eyebrow}</small><strong>{story.title}</strong><em>{story.summary}</em></span><b aria-hidden="true">→</b></button>)}</div>
+  </section>;
+}
+
+function StoryPresenter({ story, step, target, onBack, onNext, onExit }) {
+  const current = story.steps[step];
+  const isLast = step === story.steps.length - 1;
+  return <section className="story-presenter" aria-live="polite">
+    <div className="story-presenter-top"><div className="panel-title">{story.eyebrow}</div><button className="text-button" onClick={onExit}>Exit story</button></div>
+    <div className="story-progress" aria-label={`Step ${step + 1} of ${story.steps.length}`}>{story.steps.map((item, index) => <i key={item.title} className={index <= step ? 'complete' : ''} />)}</div>
+    <div className="story-count">Step {step + 1} of {story.steps.length}</div>
+    <h2>{current.title}</h2>
+    <p>{current.body}</p>
+    <div className="story-target"><span>Focused evidence</span><strong>{target?.name || 'Waiting for available data'}</strong></div>
+    <div className="story-actions"><button onClick={onBack} disabled={step === 0}>Back</button><button className="primary-action" onClick={onNext}>{isLast ? 'Finish story' : 'Next evidence'} <span aria-hidden="true">→</span></button></div>
+  </section>;
+}
+
 function Lane({ x, width, label }) { return <><rect className="lane" x={x} y="38" width={width} height="510" rx="18" /><text className="lane-label" x={x + 20} y="68">{label}</text></>; }
 
-function Node({ node, dimmed, selected, onSelect }) {
+function Node({ node, dimmed, selected, guided, onSelect }) {
   const size = node.type === 'entity' ? 16 : node.type === 'source' ? 13 : 10;
-  return <g className={`node ${node.type} ${dimmed ? 'dim' : ''} ${selected ? 'selected' : ''}`} onClick={() => onSelect(node.id)} tabIndex="0" role="button" aria-label={node.name} onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && onSelect(node.id)}>
+  return <g className={`node ${node.type} ${dimmed ? 'dim' : ''} ${selected ? 'selected' : ''} ${guided ? 'guided' : ''}`} onClick={() => onSelect(node.id)} tabIndex="0" role="button" aria-label={node.name} onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && onSelect(node.id)}>
+    {guided && <circle className="guided-ring" cx={node.x} cy={node.y} r={size + 12} />}
     <circle cx={node.x} cy={node.y} r={size} />
     <text x={node.x} y={node.y + size + 18} textAnchor="middle">{node.name}</text>
     <text className="kind" x={node.x} y={node.y + size + 33} textAnchor="middle">{node.kind}</text>
