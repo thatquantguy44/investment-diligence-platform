@@ -1,0 +1,76 @@
+# Analyst review queue generated from source-derived USAspending recipient records.
+# A pending candidate is not a canonical-company mapping and must not be rendered as one.
+review_queue_id: defense-cyber-v1
+reviewer: Joshua Lutkemuller
+generated_from:
+  entity_run_id: 2d2e59eb-5691-41d0-a55c-0565050a9c03
+  candidate_source: usaspending_recipient_entities
+publication_policy: accepted_only
+candidates:
+  - candidate_id: recipient-uei-CWM4UN76ZQW8-to-sec-0000936468
+    sector: defense
+    source_record_id: recipient:uei:CWM4UN76ZQW8
+    source_name: LOCKHEED MARTIN CORPORATION
+    candidate_entity_id: entity:sec:0000936468
+    candidate_entity_name: LOCKHEED MARTIN CORP
+    match_method: normalized_name_similarity
+    match_score: 0.837209
+    review_status: unreviewed
+    decision: pending
+    review_note: ""
+  - candidate_id: recipient-uei-DE6HN4VGM3R1-to-sec-0001133421
+    sector: defense
+    source_record_id: recipient:uei:DE6HN4VGM3R1
+    source_name: NORTHROP GRUMMAN SYSTEMS CORPORATION
+    candidate_entity_id: entity:sec:0001133421
+    candidate_entity_name: NORTHROP GRUMMAN CORP /DE/
+    match_method: normalized_name_similarity
+    match_score: 0.703704
+    review_status: unreviewed
+    decision: pending
+    review_note: ""
+  - candidate_id: recipient-uei-H9M6J1PND9M3-to-sec-0001133421
+    sector: defense
+    source_record_id: recipient:uei:H9M6J1PND9M3
+    source_name: NORTHROP GRUMMAN SYSTEMS CORPORATION
+    candidate_entity_id: entity:sec:0001133421
+    candidate_entity_name: NORTHROP GRUMMAN CORP /DE/
+    match_method: normalized_name_similarity
+    match_score: 0.703704
+    review_status: unreviewed
+    decision: pending
+    review_note: ""
+  - candidate_id: recipient-uei-NMHFLDYJJ4C5-to-sec-0000936468
+    sector: defense
+    source_record_id: recipient:uei:NMHFLDYJJ4C5
+    source_name: LOCKHEED MARTIN CORPORATION
+    candidate_entity_id: entity:sec:0000936468
+    candidate_entity_name: LOCKHEED MARTIN CORP
+    match_method: normalized_name_similarity
+    match_score: 0.837209
+    review_status: unreviewed
+    decision: pending
+    review_note: ""
+  - candidate_id: recipient-uei-T9XKQSKMW4J1-to-sec-0001133421
+    sector: defense
+    source_record_id: recipient:uei:T9XKQSKMW4J1
+    source_name: NORTHROP GRUMMAN SYSTEMS CORPORATION
+    candidate_entity_id: entity:sec:0001133421
+    candidate_entity_name: NORTHROP GRUMMAN CORP /DE/
+    match_method: normalized_name_similarity
+    match_score: 0.703704
+    review_status: unreviewed
+    decision: pending
+    review_note: ""
+  - candidate_id: recipient-uei-ZFN2JJXBLZT3-to-sec-0000936468
+    sector: defense
+    source_record_id: recipient:uei:ZFN2JJXBLZT3
+    source_name: LOCKHEED MARTIN CORP
+    candidate_entity_id: entity:sec:0000936468
+    candidate_entity_name: LOCKHEED MARTIN CORP
+    match_method: normalized_name_similarity
+    match_score: 1.0
+    review_status: accepted
+    decision: accepted
+    reviewed_at: "2026-10-24"
+    review_note: "Approved by Joshua Lutkemuller: exact normalized recipient and SEC issuer name match; source record remains a reported award recipient relationship."
