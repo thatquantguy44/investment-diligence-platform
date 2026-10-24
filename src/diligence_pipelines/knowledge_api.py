@@ -14,8 +14,11 @@ SOURCE_LABELS = {
     "openalex": "OpenAlex",
     "uspto_patents": "USPTO",
     "uspto_patents_index": "USPTO index",
+    "usaspending": "USAspending",
+    "gdelt_doc": "GDELT DOC 2.0",
 }
 SYNTHETIC_SOURCE_IDS = {"synthetic_fixture", "openalex_fixture", "uspto_patents_fixture"}
+SOURCE_PIPELINES = {"sec_edgar": "01", "gleif": "01", "openalex": "02", "uspto_patents": "02", "uspto_patents_index": "02", "usaspending": "04", "gdelt_doc": "05"}
 
 
 def _records(connection, table: str, key: str, limit: int) -> list[dict]:
@@ -23,14 +26,28 @@ def _records(connection, table: str, key: str, limit: int) -> list[dict]:
     with connection.cursor() as cursor:
         cursor.execute(
             f"""
-            SELECT DISTINCT ON ({key}) {key}, run_id, record, created_at
-            FROM diligence.{table}
-            ORDER BY {key}, created_at DESC
+            SELECT {key}, run_id, record, created_at
+            FROM (
+                SELECT DISTINCT ON ({key}) {key}, run_id, record, created_at
+                FROM diligence.{table}
+                ORDER BY {key}, created_at DESC
+            ) AS latest_records
+            ORDER BY created_at DESC, {key}
             LIMIT %s
             """,
             (limit,),
         )
         return [{"key": row[0], "run_id": str(row[1]), "record": row[2], "created_at": row[3].isoformat()} for row in cursor.fetchall()]
+
+
+def _table_exists(connection, table: str) -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass(%s)", (f"diligence.{table}",))
+        return cursor.fetchone()[0] is not None
+
+
+def _optional_records(connection, table: str, key: str, limit: int) -> list[dict]:
+    return _records(connection, table, key, limit) if _table_exists(connection, table) else []
 
 
 def _patent_catalog_records(connection, limit: int) -> list[dict]:
@@ -54,6 +71,10 @@ def _edge_records(connection, table: str, limit: int) -> list[dict]:
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT record FROM diligence.{table} ORDER BY run_id DESC LIMIT %s", (limit,))
         return [{"record": row[0], "created_at": None} for row in cursor.fetchall()]
+
+
+def _optional_edge_records(connection, table: str, limit: int) -> list[dict]:
+    return _edge_records(connection, table, limit) if _table_exists(connection, table) else []
 
 
 def _raw_sources(connection, limit: int) -> list[dict]:
@@ -87,6 +108,11 @@ def build_graph(connection, limit: int = 80) -> dict:
     assignments = _edge_records(connection, "patent_assignments", limit)
     inventors = _edge_records(connection, "inventor_edges", limit)
     institutions = _edge_records(connection, "institution_edges", limit)
+    awards = _optional_records(connection, "awards", "record_id", limit)
+    recipients = _optional_records(connection, "recipient_entities", "record_id", limit)
+    documents = _optional_records(connection, "source_documents", "record_id", limit)
+    event_candidates = _optional_records(connection, "event_candidates", "record_id", limit)
+    entity_event_edges = _optional_edge_records(connection, "entity_event_edges", limit)
     captures = _raw_sources(connection, min(max(limit * 10, 500), 5000))
     capture_sources = {f"source:{capture['content_sha256']}": capture["source_id"] for capture in captures}
 
@@ -104,6 +130,11 @@ def build_graph(connection, limit: int = 80) -> dict:
     assignments = [row for row in assignments if is_real_record(row["record"])]
     inventors = [row for row in inventors if is_real_record(row["record"])]
     institutions = [row for row in institutions if is_real_record(row["record"])]
+    awards = [row for row in awards if is_real_record(row["record"])]
+    recipients = [row for row in recipients if is_real_record(row["record"])]
+    documents = [row for row in documents if is_real_record(row["record"])]
+    event_candidates = [row for row in event_candidates if is_real_record(row["record"])]
+    entity_event_edges = [row for row in entity_event_edges if is_real_record(row["record"])]
     captures = [capture for capture in captures if capture["source_id"] not in SYNTHETIC_SOURCE_IDS]
 
     nodes: dict[str, dict] = {}
@@ -113,10 +144,16 @@ def build_graph(connection, limit: int = 80) -> dict:
         if a in nodes and b in nodes:
             edges[(a, b, label)] = {"a": a, "b": b, "label": label, "className": class_name}
 
+    def add_source(source_id: str, pipe: str | None = None) -> str:
+        node_id = f"source:{source_id}"
+        if node_id not in nodes:
+            _add_node(nodes, node_id, name=SOURCE_LABELS.get(source_id, source_id), kind="Source", node_type="source", pipe=pipe or SOURCE_PIPELINES.get(source_id, "01"), fields={"source_id": source_id})
+        return node_id
+
     for capture in captures:
         source_id = capture["source_id"]
-        node_id = f"source:{source_id}"
-        _add_node(nodes, node_id, name=SOURCE_LABELS.get(source_id, source_id), kind="Source", node_type="source", pipe="02" if "openalex" in source_id or "uspto" in source_id else "01", fields=capture)
+        node_id = add_source(source_id)
+        nodes[node_id]["fields"] = capture
 
     for row in entities:
         record = row["record"]
@@ -128,9 +165,7 @@ def build_graph(connection, limit: int = 80) -> dict:
         work_node = f"research:{work_id}"
         _add_node(nodes, work_node, name=record.get("title", work_id), kind=f"Research work · {work_id.rsplit('/', 1)[-1]}", node_type="research", pipe="02", fields={"work_id": work_id, "run_id": row["run_id"], "publication_date": record.get("publication_date"), "source_record_id": record.get("source_record_id")})
         source_id = record.get("source_id", "openalex")
-        source_node = f"source:{source_id}"
-        if source_node not in nodes:
-            _add_node(nodes, source_node, name=SOURCE_LABELS.get(source_id, source_id), kind="Source", node_type="source", pipe="02", fields={"source_id": source_id})
+        source_node = add_source(source_id, "02")
         add_edge(source_node, work_node, "normalizes", "source")
         for author in record.get("authors", []):
             author_id = author.get("id") or f"name:{author.get('name', '')}"
@@ -149,10 +184,46 @@ def build_graph(connection, limit: int = 80) -> dict:
         patent_node = f"patent:{patent_id}"
         _add_node(nodes, patent_node, name=record.get("title", patent_id), kind=f"Patent · {patent_id}", node_type="patent", pipe="02", fields={"patent_id": patent_id, "run_id": row["run_id"], "source_record_id": record.get("source_record_id"), "review": "source evidence"})
         source_id = record.get("source_id", "uspto_patents")
-        source_node = f"source:{source_id}"
-        if source_node not in nodes:
-            _add_node(nodes, source_node, name=SOURCE_LABELS.get(source_id, source_id), kind="Source", node_type="source", pipe="02", fields={"source_id": source_id})
+        source_node = add_source(source_id, "02")
         add_edge(source_node, patent_node, "normalizes", "source")
+
+    for row in awards:
+        record = row["record"]
+        award_id = record.get("award_id") or row["key"]
+        award_node = f"award:{award_id}"
+        display_id = record.get("award_display_id") or award_id
+        description = record.get("description") or "No source description available"
+        _add_node(nodes, award_node, name=f"{display_id} · {record.get('recipient_name') or 'Unknown recipient'}", kind="Public award · {record.get('award_group', 'contract')}", node_type="award", pipe="04", fields={"award_id": award_id, "award_display_id": display_id, "recipient_name": record.get("recipient_name"), "awarding_agency": record.get("awarding_agency"), "naics_code": record.get("naics_code"), "base_obligation_date": record.get("base_obligation_date"), "obligated_amount_usd": record.get("obligated_amount_usd"), "description": description, "source_url": record.get("source_url"), "source_record_id": record.get("source_record_id"), "review": "source-derived public award"})
+        add_edge(add_source(record.get("source_id", "usaspending"), "04"), award_node, "award record", "source")
+
+    for row in recipients:
+        record = row["record"]
+        recipient_key = record.get("recipient_key") or row["key"]
+        recipient_node = f"recipient:{recipient_key}"
+        _add_node(nodes, recipient_node, name=record.get("recipient_name") or recipient_key, kind="Award recipient", node_type="recipient", pipe="04", fields={"recipient_key": recipient_key, "award_count": record.get("award_count"), "total_obligated_usd": record.get("total_obligated_usd"), "first_base_obligation_date": record.get("first_base_obligation_date"), "new_entrant_in_window": record.get("new_entrant_in_window"), "review": "award recipient; not a canonical entity match"})
+        for award_id in record.get("award_ids") or []:
+            add_edge(recipient_node, f"award:{award_id}", "recipient")
+
+    for row in documents:
+        record = row["record"]
+        document_id = record.get("document_id") or row["key"]
+        document_node = f"document:{document_id}"
+        _add_node(nodes, document_node, name=record.get("title") or document_id, kind="Source document · headline", node_type="document", pipe="05", fields={"document_id": document_id, "url": record.get("url"), "domain": record.get("domain"), "first_seen_at": record.get("first_seen_at"), "language": record.get("language"), "content_scope": record.get("content_scope"), "review": "discovery source; title only"})
+        add_edge(add_source(record.get("source_id", "gdelt_doc"), "05"), document_node, "indexes", "source")
+
+    for row in event_candidates:
+        record = row["record"]
+        candidate_id = record.get("event_candidate_id") or row["key"]
+        candidate_node = f"event:{candidate_id}"
+        _add_node(nodes, candidate_node, name=f"{record.get('event_type', 'Event')} candidate", kind="Event candidate · unverified", node_type="event", pipe="05", fields={"event_candidate_id": candidate_id, "event_type": record.get("event_type"), "status": record.get("status"), "confidence": record.get("confidence"), "report_time": record.get("report_time"), "evidence": record.get("evidence"), "review": "headline-derived candidate; analyst review required"})
+        add_edge(f"document:{record.get('document_id')}", candidate_node, "candidate event", "candidate")
+
+    for row in entity_event_edges:
+        record = row["record"]
+        candidate_node = f"event:{record.get('event_candidate_id')}"
+        entity_id = record.get("entity_id")
+        target_node = f"recipient:{entity_id}" if f"recipient:{entity_id}" in nodes else f"entity:{entity_id}"
+        add_edge(target_node, candidate_node, "headline mention", "candidate")
 
     for row in inventors:
         record = row["record"]
@@ -190,7 +261,7 @@ def build_graph(connection, limit: int = 80) -> dict:
 
 
 def _layout(nodes: dict[str, dict]) -> None:
-    columns = {"source": 95, "capture": 275, "entity": 500, "patent": 720, "research": 720, "person": 720, "institution": 1000, "topic": 1000}
+    columns = {"source": 95, "capture": 275, "entity": 500, "recipient": 500, "patent": 720, "research": 720, "person": 720, "award": 720, "document": 720, "institution": 1000, "topic": 1000, "event": 1000}
     grouped: dict[float, list[dict]] = {}
     for node in nodes.values():
         x = columns.get(node["type"], 500)
@@ -244,7 +315,7 @@ class KnowledgeHandler(BaseHTTPRequestHandler):
 def main() -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Read-only Pipeline 01/02 PostgreSQL graph API")
+    parser = argparse.ArgumentParser(description="Read-only investment-diligence PostgreSQL graph API")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()

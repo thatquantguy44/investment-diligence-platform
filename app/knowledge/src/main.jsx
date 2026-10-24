@@ -7,98 +7,91 @@ const emptyGraph = { nodes: [], edges: [] };
 
 const guidedStories = [
   {
-    id: 'identity-lineage',
-    eyebrow: 'Pipeline 01 · Identity',
-    title: 'Verify a company identity',
-    summary: 'Follow a public filing source into a canonical, reviewable company record.',
+    id: 'ai-cyber-mission',
+    eyebrow: 'Scenario 01 · Public awards',
+    title: 'AI, cyber & mission software',
+    summary: 'Trace a bounded Department of Defense award from its public source to the reported recipient.',
     steps: [
       {
-        title: 'Begin with the source',
-        body: 'The trail starts at SEC EDGAR, so the company identity can always be traced back to a public system of record.',
-        resolve: (graph) => findNode(graph, [(node) => node.type === 'source' && node.name.toLowerCase().includes('sec')]),
+        title: 'Start at the public spending source',
+        body: 'USAspending provides the original government-award record. This demo uses a deliberately bounded 2024 Department of Defense slice—not a claim about the full market.',
+        resolve: (graph) => findNode(graph, [(node) => node.type === 'source' && node.name.toLowerCase().includes('usaspending')]),
       },
       {
-        title: 'Move to the canonical entity',
-        body: 'The normalized company record provides the stable identifier that downstream diligence signals can share.',
+        title: 'Inspect a cyber mission record',
+        body: 'The award retains its public identifier, agency, classification, obligation amount, source link, and text supplied by USAspending.',
         resolve: (graph) => findNode(graph, [
-          (node) => node.type === 'entity' && node.name.toLowerCase().includes('apple'),
-          (node) => node.type === 'entity',
+          (node) => node.type === 'award' && (node.fields.description || '').toLowerCase().includes('cybersecurity'),
+          (node) => node.type === 'award' && String(node.fields.naics_code || '').startsWith('541'),
+          (node) => node.type === 'award',
         ]),
       },
       {
-        title: 'Inspect the review boundary',
-        body: 'Aliases and captures retain their evidence status. A source-derived identity is visible without implying ownership or control.',
-        resolve: (graph) => findNode(graph, [
-          (node) => node.type === 'capture' && node.kind.toLowerCase().includes('alias'),
-          (node) => node.type === 'capture',
-          (node) => node.type === 'entity',
-        ]),
-      },
-    ],
-  },
-  {
-    id: 'research-network',
-    eyebrow: 'Pipeline 02 · Research',
-    title: 'Trace a research network',
-    summary: 'Move from an institution to its publications and the people named in source metadata.',
-    steps: [
-      {
-        title: 'Find the institution',
-        body: 'Institution metadata creates a defensible starting point for exploring a research footprint.',
-        resolve: (graph) => findNode(graph, [
-          (node) => node.type === 'institution' && node.name.toLowerCase().includes('nvidia'),
-          (node) => node.type === 'institution',
-        ]),
-      },
-      {
-        title: 'Open a connected publication',
-        body: 'The graph reveals the underlying research record instead of reducing the relationship to an unexplained score.',
+        title: 'Keep the conclusion bounded',
+        body: 'The recipient is a reported award recipient. An obligation is not evidence of performance, payment, revenue, or a confirmed canonical-company match.',
         resolve: (graph) => {
-          const institution = guidedStories[1].steps[0].resolve(graph);
-          return findNeighbor(graph, institution?.id, (node) => node.type === 'research')
-            || highestDegreeNode(graph, (node) => node.type === 'research');
-        },
-      },
-      {
-        title: 'See the human network',
-        body: 'Authorship is presented as source evidence—not as an unsupported claim about current employment.',
-        resolve: (graph) => {
-          const research = guidedStories[1].steps[1].resolve(graph);
-          return findNeighbor(graph, research?.id, (node) => node.type === 'person')
-            || findNode(graph, [(node) => node.type === 'person']);
+          const award = guidedStories[0].steps[1].resolve(graph);
+          return findNeighbor(graph, award?.id, (node) => node.type === 'recipient') || award;
         },
       },
     ],
   },
   {
-    id: 'technology-evidence',
-    eyebrow: 'Pipeline 02 · Patents',
-    title: 'Explore technology evidence',
-    summary: 'Trace a patent from the source index through the record and its reported relationships.',
+    id: 'defense-sensing',
+    eyebrow: 'Scenario 02 · Public awards',
+    title: 'Defense electronics & sensing',
+    summary: 'Explore a bounded DoD electronics, sensing, and communications award slice.',
     steps: [
       {
-        title: 'Start with the patent source',
-        body: 'USPTO-derived records remain connected to their source boundary and retrieval lineage.',
+        title: 'Anchor on USAspending',
+        body: 'The scenario begins with the public source rather than a thematic inference. The extraction is limited to selected defense-electronics classifications and a 2024 DoD window.',
+        resolve: (graph) => findNode(graph, [(node) => node.type === 'source' && node.name.toLowerCase().includes('usaspending')]),
+      },
+      {
+        title: 'Open a sensing award record',
+        body: 'The record preserves the agency, classification, reported recipient, obligation, and original USAspending link for review.',
         resolve: (graph) => findNode(graph, [
-          (node) => node.type === 'source' && node.name.toLowerCase().includes('uspto'),
-          (node) => node.type === 'source',
+          (node) => node.type === 'award' && (node.fields.description || '').toLowerCase().includes('an/spy'),
+          (node) => node.type === 'award' && node.fields.naics_code === '334511',
+          (node) => node.type === 'award',
         ]),
       },
       {
-        title: 'Inspect a patent record',
-        body: 'The record carries its patent identifier, run, and source reference so the signal is reproducible.',
+        title: 'Trace the reported recipient',
+        body: 'The recipient relationship is source-reported. It is intentionally distinct from an analyst-reviewed ownership or entity-resolution conclusion.',
+        resolve: (graph) => {
+          const award = guidedStories[1].steps[1].resolve(graph);
+          return findNeighbor(graph, award?.id, (node) => node.type === 'recipient') || award;
+        },
+      },
+    ],
+  },
+  {
+    id: 'cybersecurity-landscape',
+    eyebrow: 'Scenario 03 · Technology evidence',
+    title: 'Cybersecurity technology landscape',
+    summary: 'Compare source-bounded cybersecurity research and patent records without inventing a linkage between them.',
+    steps: [
+      {
+        title: 'Start with the research source',
+        body: 'OpenAlex returns a bounded set of research metadata records. Author and institution associations remain metadata, not evidence of current employment or commercial relevance.',
+        resolve: (graph) => findNode(graph, [(node) => node.type === 'source' && node.name.toLowerCase().includes('openalex')]),
+      },
+      {
+        title: 'Inspect a cybersecurity research record',
+        body: 'Each work retains its identifier, publication date, source record, and named metadata relationships for independent review.',
         resolve: (graph) => findNode(graph, [
-          (node) => node.type === 'patent' && node.name.toLowerCase().includes('battery'),
+          (node) => node.type === 'research' && node.name.toLowerCase().includes('cybersecurity'),
+          (node) => node.type === 'research',
+        ]),
+      },
+      {
+        title: 'Compare the patent evidence boundary',
+        body: 'USPTO-derived patent records can corroborate technology activity at the topic level, but this view does not claim that a paper and patent share an owner, author, or commercial outcome.',
+        resolve: (graph) => findNode(graph, [
+          (node) => node.type === 'patent' && node.name.toLowerCase().includes('cybersecurity'),
           (node) => node.type === 'patent',
         ]),
-      },
-      {
-        title: 'Keep claims appropriately bounded',
-        body: 'Inventor and assignee records are shown as reported relationships. Candidate links stay visually distinct until reviewed.',
-        resolve: (graph) => {
-          const patent = guidedStories[2].steps[1].resolve(graph);
-          return findNeighbor(graph, patent?.id, (node) => node.type === 'person') || patent;
-        },
       },
     ],
   },
@@ -120,15 +113,6 @@ function findNeighbor(graph, nodeId, predicate) {
     return [];
   }));
   return graph.nodes.find((node) => neighborIds.has(node.id) && predicate(node)) || null;
-}
-
-function highestDegreeNode(graph, predicate) {
-  const degree = new Map();
-  graph.edges.forEach((edge) => {
-    degree.set(edge.a, (degree.get(edge.a) || 0) + 1);
-    degree.set(edge.b, (degree.get(edge.b) || 0) + 1);
-  });
-  return graph.nodes.filter(predicate).sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))[0] || null;
 }
 
 function App() {
@@ -225,14 +209,14 @@ function App() {
       <header className="topbar">
         <div>
           <div className="eyebrow">Investment Diligence Platform / Evidence Universe</div>
-          <h1>Pipeline 01 + 02 Knowledge Graph</h1>
-          <p className="subtitle">A fixture-backed prototype of identity, technology, research, and lineage signals. Every visible relationship is inspectable.</p>
+            <h1>Investment Diligence Knowledge Graph</h1>
+          <p className="subtitle">{mode === 'postgres' ? 'A live, read-only evidence graph spanning company identity, technology, public awards, and source lineage.' : 'A fixture-backed prototype of identity, technology, research, and lineage signals. Every visible relationship is inspectable.'}</p>
         </div>
         <div className={`status ${mode === 'postgres' && apiState === 'ready' ? 'live' : ''}`}><i /> {mode === 'postgres' ? apiState === 'loading' ? 'CONNECTING TO POSTGRES' : apiState === 'error' ? 'POSTGRES UNAVAILABLE' : 'LIVE POSTGRES · READ ONLY' : 'FIXTURE MODE · SOURCE-TRACEABLE'}</div>
       </header>
 
       <nav className="toolbar" aria-label="Graph filters">
-        {['all', '01', '02', 'sources'].map((option) => (
+        {['all', '01', '02', '04', '05', 'sources'].map((option) => (
           <button key={option} className={filter === option ? 'active' : ''} onClick={() => setFilter(option)}>
             {option === 'all' ? 'All signals' : option === 'sources' ? 'Sources only' : `Pipeline ${option}`}
           </button>
@@ -249,14 +233,14 @@ function App() {
         {storyPickerOpen && <StoryPicker stories={guidedStories} onStart={startStory} onClose={() => setStoryPickerOpen(false)} />}
         {activeStory && <StoryPresenter story={activeStory} step={storyStep} target={guidedTarget} onBack={() => setStoryStep((current) => Math.max(0, current - 1))} onNext={advanceStory} onExit={exitStory} />}
         {mode === 'postgres' && apiState !== 'ready' && <div className={`connection-banner ${apiState === 'error' ? 'error' : ''}`}><strong>{apiState === 'loading' ? 'Loading live PostgreSQL graph…' : 'Live PostgreSQL is unavailable'}</strong><span>{apiState === 'error' ? apiError : 'The fixture graph is intentionally hidden while live data is loading.'}</span></div>}
-        <svg viewBox="0 0 1120 590" role="img" aria-label="Interactive knowledge graph of Pipeline 01 and Pipeline 02 evidence relationships">
+        <svg viewBox="0 0 1120 590" role="img" aria-label="Interactive investment diligence knowledge graph of source-backed evidence relationships">
           <defs><radialGradient id="core"><stop offset="0" stopColor="#8c7dff" stopOpacity=".32" /><stop offset="1" stopColor="#8c7dff" stopOpacity="0" /></radialGradient></defs>
           <g className="stars">{[[34,84],[115,260],[208,74],[333,506],[530,60],[693,514],[849,78],[1032,330],[1100,545]].map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />)}</g>
           <ellipse cx="555" cy="285" rx="390" ry="260" fill="url(#core)" />
-          <Lane x="20" width="175" label="01 · Sources" />
+          <Lane x="20" width="175" label="Sources" />
           <Lane x="215" width="175" label="Capture + identity" />
-          <Lane x="410" width="205" label="Canonical graph" />
-          <Lane x="635" width="205" label="02 · Signals" />
+          <Lane x="410" width="205" label="Entities + recipients" />
+          <Lane x="635" width="205" label="Research, patents + awards" />
           <Lane x="860" width="235" label="Evidence details" />
           <g className="edges">
             {graph.edges.map((edge) => {
@@ -276,7 +260,7 @@ function App() {
       </main>
 
       <footer className="legend">
-        <Legend color="var(--cyan)" label="Entity" /><Legend color="var(--violet)" label="Patent" /><Legend color="var(--orange)" label="Research work" /><Legend color="var(--green)" label="Institution" /><Legend color="var(--red)" label="Person" /><span className="candidate-legend">Dashed = candidate / unreviewed</span><span className="footer-note">{mode === 'postgres' ? 'PostgreSQL · read only' : 'Embedded fixture · not a production score'}</span>
+        <Legend color="var(--cyan)" label="Entity" /><Legend color="var(--violet)" label="Patent" /><Legend color="var(--orange)" label="Research work" /><Legend color="var(--green)" label="Institution" /><Legend color="#f2d45e" label="Public award" /><Legend color="var(--red)" label="Person" /><span className="candidate-legend">Dashed = candidate / unreviewed</span><span className="footer-note">{mode === 'postgres' ? 'PostgreSQL · read only' : 'Embedded fixture · not a production score'}</span>
       </footer>
     </div>
   );

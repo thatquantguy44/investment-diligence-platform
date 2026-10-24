@@ -36,7 +36,7 @@ svg { display: block; width: 100%; height: 100%; }
 @keyframes guided-pulse { 0% { opacity: .95; transform: scale(.72); } 70%, 100% { opacity: 0; transform: scale(1.35); } }
 .node text { fill: #f0f5ff; font-size: 11px; font-weight: 650; paint-order: stroke; stroke: #0a1024; stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
 .node .kind { fill: #9cadd0; font-size: 9px; font-weight: 500; }
-.entity circle { fill: var(--cyan); }.source circle { fill: #30416f; stroke: var(--cyan); }.patent circle { fill: var(--violet); }.research circle { fill: var(--orange); }.institution circle { fill: var(--green); }.person circle { fill: var(--red); }.topic circle { fill: #f2d45e; }.capture circle { fill: #536489; }
+.entity circle { fill: var(--cyan); }.source circle { fill: #30416f; stroke: var(--cyan); }.patent circle { fill: var(--violet); }.research circle { fill: var(--orange); }.institution circle { fill: var(--green); }.recipient circle { fill: #48cbd3; }.award circle { fill: #f2d45e; }.document circle { fill: #7e91bd; }.event circle { fill: var(--red); }.person circle { fill: var(--red); }.topic circle { fill: #f2d45e; }.capture circle { fill: #536489; }
 .dim { opacity: .1; }
 .side-panel { position: absolute; right: 18px; top: 18px; width: min(310px, calc(100% - 36px)); max-height: calc(100% - 36px); overflow: auto; padding: 18px; border: 1px solid rgba(170,192,255,.24); border-radius: 18px; background: rgba(12,18,38,.84); box-shadow: 0 18px 55px rgba(0,0,0,.35); backdrop-filter: blur(18px); }
 .panel-name { margin: 4px 0 2px; font-size: 19px; font-weight: 750; }.panel-kind { color: var(--muted); font-size: 12px; }
