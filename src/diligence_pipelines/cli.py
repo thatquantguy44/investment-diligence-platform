@@ -322,6 +322,72 @@ def load_watchlist(path: Path) -> list[dict[str, str]]:
     return normalized
 
 
+def apply_entity_match_review(review_path: Path, settings: Settings) -> int:
+    """Publish only explicit analyst-accepted entity matches from a review queue."""
+    review = yaml.safe_load(review_path.read_text()) or {}
+    reviewer = str(review.get("reviewer") or "").strip()
+    candidates = review.get("candidates")
+    if not reviewer:
+        raise ValueError("Match review requires a reviewer")
+    if review.get("publication_policy") != "accepted_only":
+        raise ValueError("Match review publication_policy must be accepted_only")
+    if not isinstance(candidates, list):
+        raise ValueError("Match review requires a candidates list")
+
+    run_id = str(uuid.uuid4())
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    accepted = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            raise ValueError("Each match review candidate must be a mapping")
+        decision = candidate.get("decision", "pending")
+        review_status = candidate.get("review_status", "unreviewed")
+        if decision not in {"pending", "accepted", "rejected"} or review_status not in {"unreviewed", "accepted", "rejected"}:
+            raise ValueError("Match review decisions and statuses must be pending, accepted, rejected, or unreviewed")
+        if decision == "accepted":
+            required = ("candidate_id", "source_record_id", "source_name", "candidate_entity_id", "candidate_entity_name", "match_method", "match_score", "review_note")
+            missing = [field for field in required if not candidate.get(field)]
+            if missing or review_status != "accepted":
+                raise ValueError(f"Accepted match requires accepted review_status and fields: {', '.join(missing)}")
+            accepted.append({
+                "candidate_id": candidate["candidate_id"],
+                "schema_version": "1.0.0",
+                "pipeline_id": "01_entity_graph",
+                "source_id": "usaspending",
+                "run_id": run_id,
+                "query": candidate["source_name"],
+                "source_record_id": candidate["source_record_id"],
+                "candidate_entity_id": candidate["candidate_entity_id"],
+                "candidate_entity_name": candidate["candidate_entity_name"],
+                "match_method": candidate["match_method"],
+                "match_score": float(candidate["match_score"]),
+                "review_status": "accepted",
+                "reviewer": reviewer,
+                "reviewed_at": candidate.get("reviewed_at") or reviewed_at,
+                "review_note": candidate["review_note"],
+            })
+        elif decision == "rejected" and review_status != "rejected":
+            raise ValueError("Rejected match requires rejected review_status")
+        elif decision == "pending" and review_status != "unreviewed":
+            raise ValueError("Pending match requires unreviewed review_status")
+
+    product = {
+        "product_id": "reviewed_entity_matches",
+        "contract_version": "1.0.0",
+        "materialization_id": run_id,
+        "pipeline_id": "01_entity_graph",
+        "as_of": reviewed_at,
+        "partition_keys": {"review_queue_id": review.get("review_queue_id", review_path.stem)},
+        "lineage": {"review_queue": str(review_path), "reviewer": reviewer},
+        "location": f"storage://curated/01_entity_graph/{run_id}/reviewed_match_candidates",
+        "record_counts": {"accepted_matches": len(accepted), "pending_or_rejected_matches": len(candidates) - len(accepted)},
+    }
+    storage = build_storage(settings)
+    storage.publish_reviewed_match_product(run_id, accepted, product)
+    print(json.dumps({"run_id": run_id, "status": "published", "reviewer": reviewer, "accepted_match_count": len(accepted), "materialization_id": run_id}, indent=2))
+    return 0
+
+
 def run_sec_watchlist(watchlist: list[dict[str, str]], settings: Settings) -> int:
     run_id = str(uuid.uuid4())
     storage = build_storage(settings)
@@ -897,6 +963,8 @@ def main() -> int:
     review_parser.add_argument("--reviewer", required=True)
     review_parser.add_argument("--note", required=True, help="Human review rationale")
     review_parser.add_argument("--output", type=Path, required=True, help="Reviewed selection manifest path")
+    match_review_parser = subparsers.add_parser("apply-entity-match-review", help="Publish only analyst-accepted company-match edges from a review queue")
+    match_review_parser.add_argument("--review", type=Path, required=True, help="YAML review queue with accepted, rejected, or pending decisions")
     refresh_parser = subparsers.add_parser("refresh-uspto-odp")
     refresh_parser.add_argument("--selection", type=Path, required=True, help="Reviewed selection manifest")
     refresh_parser.add_argument("--output", type=Path, required=True, help="Local artifact path")
@@ -976,6 +1044,8 @@ def main() -> int:
         return select_uspto_odp(args.catalog, args.contains, args.output)
     if args.command == "review-uspto-odp":
         return review_uspto_odp(args.discovery, args.candidate_index, args.reviewer, args.note, args.output)
+    if args.command == "apply-entity-match-review":
+        return apply_entity_match_review(args.review, Settings.from_env())
     if args.command == "refresh-uspto-odp":
         return refresh_uspto_odp(args.selection, args.output, args.previous_file, args.report_output, args.quality_output, args.max_age_days, args.max_examples, Settings.from_env())
     if args.command == "search-uspto-index":

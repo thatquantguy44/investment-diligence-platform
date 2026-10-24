@@ -50,6 +50,27 @@ def _optional_records(connection, table: str, key: str, limit: int) -> list[dict
     return _records(connection, table, key, limit) if _table_exists(connection, table) else []
 
 
+def _match_candidate_records(connection, limit: int) -> list[dict]:
+    """Load the latest decision for each candidate without assuming a legacy timestamp column."""
+    if not _table_exists(connection, "match_candidates"):
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT candidate_id, run_id, record, record->>'reviewed_at' AS reviewed_at
+            FROM (
+                SELECT DISTINCT ON (candidate_id) candidate_id, run_id, record
+                FROM diligence.match_candidates
+                ORDER BY candidate_id, record->>'reviewed_at' DESC NULLS LAST, run_id DESC
+            ) AS latest_candidates
+            ORDER BY reviewed_at DESC NULLS LAST, candidate_id
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return [{"key": row[0], "run_id": str(row[1]), "record": row[2], "created_at": row[3]} for row in cursor.fetchall()]
+
+
 def _patent_catalog_records(connection, limit: int) -> list[dict]:
     with connection.cursor() as cursor:
         cursor.execute("SELECT to_regclass(%s)", ("diligence.patent_catalog",))
@@ -113,6 +134,7 @@ def build_graph(connection, limit: int = 80) -> dict:
     documents = _optional_records(connection, "source_documents", "record_id", limit)
     event_candidates = _optional_records(connection, "event_candidates", "record_id", limit)
     entity_event_edges = _optional_edge_records(connection, "entity_event_edges", limit)
+    match_candidates = _match_candidate_records(connection, limit)
     captures = _raw_sources(connection, min(max(limit * 10, 500), 5000))
     capture_sources = {f"source:{capture['content_sha256']}": capture["source_id"] for capture in captures}
 
@@ -135,6 +157,7 @@ def build_graph(connection, limit: int = 80) -> dict:
     documents = [row for row in documents if is_real_record(row["record"])]
     event_candidates = [row for row in event_candidates if is_real_record(row["record"])]
     entity_event_edges = [row for row in entity_event_edges if is_real_record(row["record"])]
+    match_candidates = [row for row in match_candidates if is_real_record(row["record"])]
     captures = [capture for capture in captures if capture["source_id"] not in SYNTHETIC_SOURCE_IDS]
 
     nodes: dict[str, dict] = {}
@@ -203,6 +226,15 @@ def build_graph(connection, limit: int = 80) -> dict:
         _add_node(nodes, recipient_node, name=record.get("recipient_name") or recipient_key, kind="Award recipient", node_type="recipient", pipe="04", fields={"recipient_key": recipient_key, "award_count": record.get("award_count"), "total_obligated_usd": record.get("total_obligated_usd"), "first_base_obligation_date": record.get("first_base_obligation_date"), "new_entrant_in_window": record.get("new_entrant_in_window"), "review": "award recipient; not a canonical entity match"})
         for award_id in record.get("award_ids") or []:
             add_edge(recipient_node, f"award:{award_id}", "recipient")
+
+    for row in match_candidates:
+        record = row["record"]
+        if record.get("review_status") != "accepted":
+            continue
+        entity_node = f"entity:{record.get('candidate_entity_id')}"
+        recipient_node = record.get("source_record_id")
+        if isinstance(recipient_node, str) and recipient_node.startswith("recipient:"):
+            add_edge(entity_node, recipient_node, "analyst-reviewed match", "reviewed")
 
     for row in documents:
         record = row["record"]

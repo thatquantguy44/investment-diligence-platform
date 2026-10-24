@@ -97,6 +97,11 @@ class LocalStorage:
         self.write_jsonl(f"curated/01_entity_graph/{run_id}/product_manifest.jsonl", [product])
         return str(output)
 
+    def publish_reviewed_match_product(self, run_id: str, candidates: list[dict], product: dict) -> str:
+        output = self.write_jsonl(f"curated/01_entity_graph/{run_id}/reviewed_match_candidates.jsonl", candidates)
+        self.write_jsonl(f"curated/01_entity_graph/{run_id}/product_manifest.jsonl", [product])
+        return str(output)
+
     def publish_research_product(self, run_id: str, records: list[dict], product: dict, observations: list[dict] | None = None, patent_records: list[dict] | None = None, assignments: list[dict] | None = None, inventor_edges: list[dict] | None = None, institution_edges: list[dict] | None = None) -> str:
         output = self.write_jsonl(f"curated/02_technology_talent/{run_id}/research_works.jsonl", records)
         self.write_jsonl(f"curated/02_technology_talent/{run_id}/technology_topic_observations.jsonl", observations or [])

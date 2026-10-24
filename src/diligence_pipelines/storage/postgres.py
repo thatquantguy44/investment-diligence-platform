@@ -268,6 +268,23 @@ class PostgresStorage:
         connection.commit()
         return f"postgresql://diligence/product_manifests/{run_id}"
 
+    def publish_reviewed_match_product(self, run_id: str, candidates: list[dict[str, Any]], product: dict[str, Any]) -> str:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            for candidate in candidates:
+                cursor.execute("""
+                    INSERT INTO diligence.match_candidates (candidate_id, run_id, candidate_entity_id, record)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (candidate_id, run_id) DO UPDATE SET record = EXCLUDED.record
+                """, (candidate["candidate_id"], run_id, candidate["candidate_entity_id"], json.dumps(candidate, default=str)))
+            cursor.execute("""
+                INSERT INTO diligence.product_manifests (materialization_id, product_id, pipeline_id, manifest)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (materialization_id) DO NOTHING
+            """, (run_id, product["product_id"], product["pipeline_id"], json.dumps(product, default=str)))
+        connection.commit()
+        return f"postgresql://diligence/product_manifests/{run_id}"
+
     def close(self) -> None:
         if self._connection is not None:
             self._connection.close()

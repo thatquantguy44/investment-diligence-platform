@@ -1,0 +1,24 @@
+# Bounded Pipeline 01 identity universe for the defense/cyber demo.
+# Selection is user-directed and is not an investment recommendation.
+watchlist_id: defense-cyber-v1
+reviewer: Joshua Lutkemuller
+match_publication_policy: analyst_review_required
+entities:
+  - ticker: RTX
+    cik: "0000101829"
+    scope: defense
+  - ticker: BA
+    cik: "0000012927"
+    scope: defense
+  - ticker: NOC
+    cik: "0001133421"
+    scope: defense
+  - ticker: LMT
+    cik: "0000936468"
+    scope: defense
+  - ticker: CRWD
+    cik: "0001535527"
+    scope: cybersecurity
+  - ticker: NET
+    cik: "0001477333"
+    scope: cybersecurity
