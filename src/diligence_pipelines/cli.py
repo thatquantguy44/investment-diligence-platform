@@ -323,7 +323,7 @@ def load_watchlist(path: Path) -> list[dict[str, str]]:
 
 
 def apply_entity_match_review(review_path: Path, settings: Settings) -> int:
-    """Publish only explicit analyst-accepted entity matches from a review queue."""
+    """Publish a review queue while keeping only accepted matches available by default."""
     review = yaml.safe_load(review_path.read_text()) or {}
     reviewer = str(review.get("reviewer") or "").strip()
     candidates = review.get("candidates")
@@ -336,7 +336,10 @@ def apply_entity_match_review(review_path: Path, settings: Settings) -> int:
 
     run_id = str(uuid.uuid4())
     reviewed_at = datetime.now(timezone.utc).isoformat()
-    accepted = []
+    review_records = []
+    accepted_count = 0
+    pending_count = 0
+    rejected_count = 0
     for candidate in candidates:
         if not isinstance(candidate, dict):
             raise ValueError("Each match review candidate must be a mapping")
@@ -344,32 +347,44 @@ def apply_entity_match_review(review_path: Path, settings: Settings) -> int:
         review_status = candidate.get("review_status", "unreviewed")
         if decision not in {"pending", "accepted", "rejected"} or review_status not in {"unreviewed", "accepted", "rejected"}:
             raise ValueError("Match review decisions and statuses must be pending, accepted, rejected, or unreviewed")
-        if decision == "accepted":
-            required = ("candidate_id", "source_record_id", "source_name", "candidate_entity_id", "candidate_entity_name", "match_method", "match_score", "review_note")
-            missing = [field for field in required if not candidate.get(field)]
-            if missing or review_status != "accepted":
-                raise ValueError(f"Accepted match requires accepted review_status and fields: {', '.join(missing)}")
-            accepted.append({
-                "candidate_id": candidate["candidate_id"],
-                "schema_version": "1.0.0",
-                "pipeline_id": "01_entity_graph",
-                "source_id": "usaspending",
-                "run_id": run_id,
-                "query": candidate["source_name"],
-                "source_record_id": candidate["source_record_id"],
-                "candidate_entity_id": candidate["candidate_entity_id"],
-                "candidate_entity_name": candidate["candidate_entity_name"],
-                "match_method": candidate["match_method"],
-                "match_score": float(candidate["match_score"]),
-                "review_status": "accepted",
-                "reviewer": reviewer,
-                "reviewed_at": candidate.get("reviewed_at") or reviewed_at,
-                "review_note": candidate["review_note"],
-            })
-        elif decision == "rejected" and review_status != "rejected":
+        required = ("candidate_id", "source_record_id", "source_name", "candidate_entity_id", "candidate_entity_name", "match_method", "match_score")
+        missing = [field for field in required if candidate.get(field) in (None, "")]
+        if missing:
+            raise ValueError(f"Match review candidate requires fields: {', '.join(missing)}")
+        if decision == "accepted" and review_status != "accepted":
+            raise ValueError("Accepted match requires accepted review_status")
+        if decision == "accepted" and not candidate.get("review_note"):
+            raise ValueError("Accepted match requires a review_note")
+        if decision == "rejected" and review_status != "rejected":
             raise ValueError("Rejected match requires rejected review_status")
         elif decision == "pending" and review_status != "unreviewed":
             raise ValueError("Pending match requires unreviewed review_status")
+        review_records.append({
+            "candidate_id": candidate["candidate_id"],
+            "schema_version": "1.0.0",
+            "pipeline_id": "01_entity_graph",
+            "source_id": "usaspending",
+            "run_id": run_id,
+            "published_at": reviewed_at,
+            "query": candidate["source_name"],
+            "source_record_id": candidate["source_record_id"],
+            "candidate_entity_id": candidate["candidate_entity_id"],
+            "candidate_entity_name": candidate["candidate_entity_name"],
+            "sector": candidate.get("sector") or None,
+            "match_method": candidate["match_method"],
+            "match_score": float(candidate["match_score"]),
+            "review_status": review_status,
+            "decision": decision,
+            "reviewer": reviewer if review_status != "unreviewed" else None,
+            "reviewed_at": candidate.get("reviewed_at") or reviewed_at,
+            "review_note": candidate.get("review_note") or None,
+        })
+        if review_status == "accepted":
+            accepted_count += 1
+        elif review_status == "rejected":
+            rejected_count += 1
+        else:
+            pending_count += 1
 
     product = {
         "product_id": "reviewed_entity_matches",
@@ -380,11 +395,11 @@ def apply_entity_match_review(review_path: Path, settings: Settings) -> int:
         "partition_keys": {"review_queue_id": review.get("review_queue_id", review_path.stem)},
         "lineage": {"review_queue": str(review_path), "reviewer": reviewer},
         "location": f"storage://curated/01_entity_graph/{run_id}/reviewed_match_candidates",
-        "record_counts": {"accepted_matches": len(accepted), "pending_or_rejected_matches": len(candidates) - len(accepted)},
+        "record_counts": {"accepted_matches": accepted_count, "unreviewed_candidates": pending_count, "rejected_matches": rejected_count},
     }
     storage = build_storage(settings)
-    storage.publish_reviewed_match_product(run_id, accepted, product)
-    print(json.dumps({"run_id": run_id, "status": "published", "reviewer": reviewer, "accepted_match_count": len(accepted), "materialization_id": run_id}, indent=2))
+    storage.publish_reviewed_match_product(run_id, review_records, product)
+    print(json.dumps({"run_id": run_id, "status": "published", "reviewer": reviewer, "accepted_match_count": accepted_count, "unreviewed_candidate_count": pending_count, "rejected_match_count": rejected_count, "materialization_id": run_id}, indent=2))
     return 0
 
 

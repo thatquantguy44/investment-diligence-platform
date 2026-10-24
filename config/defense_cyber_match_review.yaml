@@ -8,6 +8,7 @@ generated_from:
 publication_policy: accepted_only
 candidates:
   - candidate_id: recipient-uei-CWM4UN76ZQW8-to-sec-0000936468
+    sector: defense
     source_record_id: recipient:uei:CWM4UN76ZQW8
     source_name: LOCKHEED MARTIN CORPORATION
     candidate_entity_id: entity:sec:0000936468
@@ -18,6 +19,7 @@ candidates:
     decision: pending
     review_note: ""
   - candidate_id: recipient-uei-DE6HN4VGM3R1-to-sec-0001133421
+    sector: defense
     source_record_id: recipient:uei:DE6HN4VGM3R1
     source_name: NORTHROP GRUMMAN SYSTEMS CORPORATION
     candidate_entity_id: entity:sec:0001133421
@@ -28,6 +30,7 @@ candidates:
     decision: pending
     review_note: ""
   - candidate_id: recipient-uei-H9M6J1PND9M3-to-sec-0001133421
+    sector: defense
     source_record_id: recipient:uei:H9M6J1PND9M3
     source_name: NORTHROP GRUMMAN SYSTEMS CORPORATION
     candidate_entity_id: entity:sec:0001133421
@@ -38,6 +41,7 @@ candidates:
     decision: pending
     review_note: ""
   - candidate_id: recipient-uei-NMHFLDYJJ4C5-to-sec-0000936468
+    sector: defense
     source_record_id: recipient:uei:NMHFLDYJJ4C5
     source_name: LOCKHEED MARTIN CORPORATION
     candidate_entity_id: entity:sec:0000936468
@@ -48,6 +52,7 @@ candidates:
     decision: pending
     review_note: ""
   - candidate_id: recipient-uei-T9XKQSKMW4J1-to-sec-0001133421
+    sector: defense
     source_record_id: recipient:uei:T9XKQSKMW4J1
     source_name: NORTHROP GRUMMAN SYSTEMS CORPORATION
     candidate_entity_id: entity:sec:0001133421
@@ -58,6 +63,7 @@ candidates:
     decision: pending
     review_note: ""
   - candidate_id: recipient-uei-ZFN2JJXBLZT3-to-sec-0000936468
+    sector: defense
     source_record_id: recipient:uei:ZFN2JJXBLZT3
     source_name: LOCKHEED MARTIN CORP
     candidate_entity_id: entity:sec:0000936468

@@ -1,0 +1,7 @@
+# Each sector has one configured analyst reviewer for the local review workflow.
+# These values are resolved server-side; the browser cannot choose a reviewer.
+sectors:
+  defense:
+    reviewer: Joshua Lutkemuller
+  cybersecurity:
+    reviewer: Joshua Lutkemuller

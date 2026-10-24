@@ -34,6 +34,7 @@ class Settings:
     gdelt_doc_api_url: str = "https://api.gdeltproject.org/api/v2/doc/doc"
     llm_base_url: str = "http://localhost:11434"
     llm_event_model: str = ""
+    sector_reviewer_config: Path = Path("config/sector_reviewers.yaml")
 
     @property
     def comtrade_api_keys(self) -> tuple[str, ...]:
@@ -84,4 +85,5 @@ class Settings:
             gdelt_doc_api_url=value("GDELT_DOC_API_URL", "https://api.gdeltproject.org/api/v2/doc/doc"),
             llm_base_url=value("LLM_BASE_URL", "http://localhost:11434"),
             llm_event_model=value("LLM_EVENT_MODEL", ""),
+            sector_reviewer_config=Path(value("DILIGENCE_SECTOR_REVIEWER_CONFIG", "config/sector_reviewers.yaml")),
         )

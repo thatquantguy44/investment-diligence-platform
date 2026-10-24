@@ -80,6 +80,18 @@ class PostgresStorage:
                 )
             """)
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS diligence.match_review_decisions (
+                    decision_id uuid PRIMARY KEY,
+                    candidate_id text NOT NULL,
+                    record jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now()
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS match_review_decisions_candidate_created_at_idx
+                ON diligence.match_review_decisions (candidate_id, created_at DESC)
+            """)
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS diligence.research_works (
                     work_id text NOT NULL,
                     run_id uuid NOT NULL,

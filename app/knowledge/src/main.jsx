@@ -203,6 +203,11 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [showAllEntities, setShowAllEntities] = useState(false);
   const [showAllRelationships, setShowAllRelationships] = useState(false);
+  const [showReviewCandidates, setShowReviewCandidates] = useState(false);
+  const [inspectedCandidateId, setInspectedCandidateId] = useState(null);
+  const [reviewingCandidate, setReviewingCandidate] = useState(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState('');
   const [expandedTypes, setExpandedTypes] = useState([]);
   const [clusterPosition, setClusterPosition] = useState({ x: 330, y: 310 });
   const [clusterOpen, setClusterOpen] = useState(false);
@@ -214,8 +219,14 @@ function App() {
   const panRef = useRef(null);
   const normalizedQuery = query.trim().toLowerCase();
   const nodeMap = useMemo(() => Object.fromEntries(graph.nodes.map((node) => [node.id, node])), [graph]);
+  const graphForView = useMemo(() => showReviewCandidates ? graph : { ...graph, edges: graph.edges.filter((edge) => edge.className !== 'candidate') }, [graph, showReviewCandidates]);
+  const reviewQueue = graph.reviewQueue || [];
+  const reviewCandidates = useMemo(() => reviewQueue.filter((candidate) => candidate.reviewStatus === 'unreviewed'), [reviewQueue]);
+  const completedReviews = useMemo(() => reviewQueue.filter((candidate) => candidate.reviewStatus !== 'unreviewed'), [reviewQueue]);
   const entities = useMemo(() => graph.nodes.filter((node) => node.type === 'entity').sort((a, b) => a.name.localeCompare(b.name)), [graph]);
   const selectedNode = selected ? nodeMap[selected] : null;
+  const inspectedCandidate = reviewCandidates.find((candidate) => candidate.candidateId === inspectedCandidateId) || null;
+  const activeInspectedCandidate = inspectedCandidate && (selected === inspectedCandidate.sourceRecordId || selected === `entity:${inspectedCandidate.candidateEntityId}`) ? inspectedCandidate : null;
   const companyLensValue = showAllEntities ? 'all' : entities.some((entity) => entity.id === selected) ? selected : '';
   const activeStory = guidedStories.find((story) => story.id === activeStoryId) || null;
   const activeStoryStep = activeStory?.steps[storyStep] || null;
@@ -259,28 +270,28 @@ function App() {
     return matchesQuery && matchesFilter;
   };
 
-  const neighborIds = useMemo(() => neighborsFor(graph, selected), [graph, selected]);
+  const neighborIds = useMemo(() => neighborsFor(graphForView, selected), [graphForView, selected]);
   const focusedIds = useMemo(() => new Set(selected ? [selected, ...neighborIds] : []), [selected, neighborIds]);
-  const entityEvidencePaths = useMemo(() => entityEvidencePathsFor(graph, selected, nodeMap), [graph, selected, nodeMap]);
+  const entityEvidencePaths = useMemo(() => entityEvidencePathsFor(graphForView, selected, nodeMap), [graphForView, selected, nodeMap]);
   const relationshipIds = useMemo(() => showAllRelationships ? new Set([selected, ...entityEvidencePaths.map((item) => item.node.id)]) : focusedIds, [selected, focusedIds, entityEvidencePaths, showAllRelationships]);
-  const renderedNodes = useMemo(() => graph.nodes.filter((node) => visible(node) && (showAllEntities ? node.type === 'entity' : (!selected || relationshipIds.has(node.id) || expandedTypes.includes(node.type)))), [graph, selected, relationshipIds, expandedTypes, filter, normalizedQuery, showAllEntities]);
+  const renderedNodes = useMemo(() => graphForView.nodes.filter((node) => visible(node) && (showAllEntities ? node.type === 'entity' : (!selected || relationshipIds.has(node.id) || expandedTypes.includes(node.type)))), [graphForView, selected, relationshipIds, expandedTypes, filter, normalizedQuery, showAllEntities]);
   const renderedNodeMap = useMemo(() => Object.fromEntries(renderedNodes.map((node) => [node.id, node])), [renderedNodes]);
-  const renderedEdges = useMemo(() => graph.edges.filter((edge) => renderedNodeMap[edge.a] && renderedNodeMap[edge.b]), [graph, renderedNodeMap]);
+  const renderedEdges = useMemo(() => graphForView.edges.filter((edge) => renderedNodeMap[edge.a] && renderedNodeMap[edge.b]), [graphForView, renderedNodeMap]);
   const clusters = useMemo(() => {
     if (!selected || showAllEntities) return [];
     const counts = new Map();
-    graph.nodes.filter((node) => visible(node) && !relationshipIds.has(node.id) && !expandedTypes.includes(node.type)).forEach((node) => counts.set(node.type, (counts.get(node.type) || 0) + 1));
+    graphForView.nodes.filter((node) => visible(node) && !relationshipIds.has(node.id) && !expandedTypes.includes(node.type)).forEach((node) => counts.set(node.type, (counts.get(node.type) || 0) + 1));
     return [...counts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count);
-  }, [graph, selected, relationshipIds, expandedTypes, filter, normalizedQuery, showAllEntities]);
+  }, [graphForView, selected, relationshipIds, expandedTypes, filter, normalizedQuery, showAllEntities]);
   const metrics = useMemo(() => {
     const counts = graph.nodes.reduce((accumulator, node) => ({ ...accumulator, [node.type]: (accumulator[node.type] || 0) + 1 }), {});
     return [
       { label: showAllEntities ? 'Entity overview' : 'Focused lens', value: showAllEntities ? `${entities.length} canonical companies` : selectedNode?.name || 'Choose a node', detail: showAllEntities ? 'Select a company to inspect its one-hop evidence' : selected ? `${showAllRelationships ? renderedEdges.length : neighborIds.size} ${showAllRelationships ? 'entity-scoped evidence relationships' : 'direct evidence relationships'}` : 'Start with a company, topic, or institution' },
       { label: 'Technology evidence', value: `${counts.research || 0} research · ${counts.patent || 0} patents`, detail: 'OpenAlex and USPTO-derived records' },
       { label: 'Public awards', value: `${counts.award || 0} awards · ${counts.recipient || 0} recipients`, detail: 'Bounded USAspending records' },
-      { label: 'Canonical identity', value: `${counts.entity || 0} companies`, detail: 'SEC-derived identity records' },
+      { label: 'Canonical identity', value: `${counts.entity || 0} companies`, detail: reviewCandidates.length ? `SEC-derived identity records · ${reviewCandidates.length} review candidates` : 'SEC-derived identity records' },
     ];
-  }, [graph, selectedNode, selected, neighborIds, renderedEdges, entities, showAllEntities, showAllRelationships]);
+  }, [graph, selectedNode, selected, neighborIds, renderedEdges, entities, showAllEntities, showAllRelationships, reviewCandidates]);
 
   const setDataMode = (nextMode) => {
     setMode(nextMode);
@@ -313,6 +324,24 @@ function App() {
     else setStoryStep((current) => current + 1);
   };
 
+  const submitReview = async ({ candidateId, action, note }) => {
+    setReviewSubmitting(true);
+    setReviewError('');
+    try {
+      const response = await fetch('/api/knowledge/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId, action, note }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to save the review decision');
+      setGraph(payload.graph);
+      setApiState('ready');
+      setReviewingCandidate(null);
+      setInspectedCandidateId(null);
+    } catch (error) {
+      setReviewError(error.message || 'Unable to save the review decision');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -343,6 +372,7 @@ function App() {
           </select>
         </label>
         <button className={showAllRelationships ? 'active' : ''} disabled={!selected || showAllEntities} aria-pressed={showAllRelationships} onClick={() => setShowAllRelationships((current) => !current)}>{showAllRelationships ? 'Evidence: this entity' : 'Evidence: one hop'}</button>
+        <button className={showReviewCandidates ? 'active review-toggle' : 'review-toggle'} aria-pressed={showReviewCandidates} onClick={() => setShowReviewCandidates((current) => !current)}>Review candidates {reviewCandidates.length ? `(${reviewCandidates.length})` : ''}</button>
         {!activeStory && <button className={`data-switch ${effectiveLive ? 'live-button' : ''}`} onClick={() => setDataMode(mode === 'postgres' ? 'fixture' : 'postgres')}>{effectiveLive ? '● Live data' : '○ Fixture fallback'}</button>}
         {activeStory && <span className={`demo-data-status ${effectiveLive ? 'live' : ''}`}>{effectiveLive ? '● Live evidence' : '○ Fixture fallback'}</span>}
         <button className={`demo-button ${activeStory ? 'active' : ''}`} onClick={() => setStoryPickerOpen((open) => !open)} aria-expanded={storyPickerOpen}>▶ Guided demo</button>
@@ -356,6 +386,7 @@ function App() {
       <main className="stage">
         {storyPickerOpen && <StoryPicker stories={guidedStories} onStart={startStory} onClose={() => setStoryPickerOpen(false)} />}
         {activeStory && <StoryPresenter story={activeStory} step={storyStep} target={guidedTarget} onBack={() => setStoryStep((current) => Math.max(0, current - 1))} onNext={advanceStory} onExit={exitStory} />}
+        {showReviewCandidates && <ReviewCandidatesPanel candidates={reviewCandidates} completedReviews={completedReviews} selected={selected} nodeMap={nodeMap} onInspect={(candidate) => { setInspectedCandidateId(candidate.candidateId); selectLens(candidate.sourceRecordId); }} onReopen={(candidate) => { setReviewError(''); setReviewingCandidate(candidate); }} />}
         {mode === 'postgres' && apiState !== 'ready' && <div className={`connection-banner ${apiState === 'error' ? 'error' : ''}`}><strong>{apiState === 'loading' ? 'Loading live PostgreSQL graph…' : 'Live PostgreSQL is unavailable'}</strong><span>{apiState === 'error' ? apiError : 'The fixture graph is intentionally hidden while live data is loading.'}</span></div>}
         <ClusterRail clusters={clusters} expandedTypes={expandedTypes} isOpen={clusterOpen} onToggleOpen={() => setClusterOpen((current) => !current)} position={clusterPosition} onPositionChange={setClusterPosition} onResetPosition={() => { setClusterPosition({ x: 330, y: 310 }); setClusterOpen(false); }} onToggle={toggleCluster} onCollapse={() => setExpandedTypes([])} />
         <div className="viewport-controls" aria-label="Graph zoom controls"><button onClick={() => zoomBy(-0.2)} aria-label="Zoom out">−</button><button onClick={() => setViewport({ x: 0, y: 0, scale: 1 })} aria-label="Reset graph view">◎</button><button onClick={() => zoomBy(0.2)} aria-label="Zoom in">+</button></div>
@@ -384,8 +415,9 @@ function App() {
             </g>
           </g>
         </svg>
-        <EvidencePanel node={selectedNode} graph={graph} nodeMap={nodeMap} entityOverview={showAllEntities} onOpenWorkspace={() => { setShowAllRelationships(true); setEvidenceWorkspaceOpen(true); }} />
-        {evidenceWorkspaceOpen && selectedNode && <EvidenceWorkspace node={selectedNode} graph={graph} nodeMap={nodeMap} onClose={() => setEvidenceWorkspaceOpen(false)} onSelect={(nodeId) => { selectLens(nodeId); setEvidenceWorkspaceOpen(false); }} />}
+        <EvidencePanel node={selectedNode} graph={graphForView} nodeMap={nodeMap} entityOverview={showAllEntities} reviewCandidate={activeInspectedCandidate} onOpenReview={() => { setReviewError(''); setReviewingCandidate(activeInspectedCandidate); }} onOpenWorkspace={() => { setShowAllRelationships(true); setEvidenceWorkspaceOpen(true); }} />
+        {evidenceWorkspaceOpen && selectedNode && <EvidenceWorkspace node={selectedNode} graph={graphForView} nodeMap={nodeMap} onClose={() => setEvidenceWorkspaceOpen(false)} onSelect={(nodeId) => { selectLens(nodeId); setEvidenceWorkspaceOpen(false); }} />}
+        {reviewingCandidate && <ReviewDecisionModal candidate={reviewingCandidate} nodeMap={nodeMap} submitting={reviewSubmitting} error={reviewError} onClose={() => { if (!reviewSubmitting) { setReviewingCandidate(null); setReviewError(''); } }} onSubmit={submitReview} />}
       </main>
 
       <footer className="legend">
@@ -442,6 +474,30 @@ function ClusterRail({ clusters, expandedTypes, isOpen, onToggleOpen, position, 
   return <aside className={`cluster-rail ${isOpen ? 'open' : 'compact'}`} style={{ left: position.x, top: position.y }} aria-label="Collapsed evidence clusters"><div className="cluster-rail-header" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><div><div className="panel-title">Collapsed evidence</div><span>{isOpen ? 'Drag to reposition. Expand a type to add it to this lens.' : `${clusterCount} evidence types · drag to reposition`}</span></div><div className="cluster-actions"><button className="icon-button cluster-toggle" onPointerDown={(event) => event.stopPropagation()} onClick={onToggleOpen} aria-expanded={isOpen}>{isOpen ? '−' : '+'}</button><button className="icon-button cluster-reset" onPointerDown={(event) => event.stopPropagation()} onClick={onResetPosition} aria-label="Reset collapsed evidence position">↺</button></div></div>{isOpen && <>{clusters.map((cluster) => <button key={cluster.type} onClick={() => onToggle(cluster.type)}><strong>{cluster.count}</strong> {cluster.type.replaceAll('_', ' ')} <b>+</b></button>)}{expandedTypes.length > 0 && <button className="collapse-button" onClick={onCollapse}>Collapse expanded records</button>}</>}</aside>;
 }
 
+function ReviewCandidatesPanel({ candidates, completedReviews, selected, nodeMap, onInspect, onReopen }) {
+  const relevant = selected ? candidates.filter((candidate) => candidate.sourceRecordId === selected || `entity:${candidate.candidateEntityId}` === selected) : candidates;
+  return <aside className="review-candidates-panel" aria-label="Unreviewed match candidates">
+    <div className="panel-title">Review queue</div>
+    <h2>Candidate connections</h2>
+    <p>{selected ? `${relevant.length} candidate ${relevant.length === 1 ? 'link' : 'links'} touch this lens.` : `${relevant.length} candidate ${relevant.length === 1 ? 'link is' : 'links are'} available for review.`}</p>
+    <div className="review-queue-note">Dashed links are proposed matches, not conclusions. Review the source record before approving one.</div>
+    <div className="review-candidate-list">
+      {relevant.map((candidate) => {
+        const source = nodeMap[candidate.sourceRecordId];
+        const score = Number(candidate.matchScore);
+        return <button className="review-candidate" key={candidate.candidateId} onClick={() => onInspect(candidate)}>
+          <span>Unreviewed candidate</span>
+          <strong>{candidate.candidateEntityName || 'Canonical company'}</strong>
+          <em>{source?.name || candidate.sourceName || 'Source record'}</em>
+          <small>{Number.isFinite(score) ? `${Math.round(score * 100)}% match score` : 'Score unavailable'} · {(candidate.matchMethod || 'match method').replaceAll('_', ' ')}</small>
+        </button>;
+      })}
+      {relevant.length === 0 && <div className="review-empty">No unreviewed candidate links touch this selection. Choose another company or return to the all-entity view.</div>}
+    </div>
+    {completedReviews.length > 0 && <section className="review-history"><div><span>Recent review history</span><b>{completedReviews.length}</b></div>{completedReviews.slice(0, 3).map((candidate) => { const latest = candidate.reviewHistory?.at(-1); return <button key={candidate.candidateId} onClick={() => onReopen(candidate)}><strong>{candidate.candidateEntityName}</strong><em>{candidate.reviewStatus} · {latest?.reviewer || candidate.reviewer || 'Configured reviewer'} · reopen</em></button>; })}</section>}
+  </aside>;
+}
+
 function Node({ node, selected, guided, onSelect }) {
   const size = node.type === 'entity' ? 16 : node.type === 'source' ? 13 : 10;
   return <g className={`node ${node.type} ${selected ? 'selected' : ''} ${guided ? 'guided' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(node.id); }} tabIndex="0" role="button" aria-label={node.name} onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && onSelect(node.id)}>
@@ -452,14 +508,24 @@ function Node({ node, selected, guided, onSelect }) {
   </g>;
 }
 
-function EvidencePanel({ node, graph, nodeMap, entityOverview, onOpenWorkspace }) {
+function EvidencePanel({ node, graph, nodeMap, entityOverview, reviewCandidate, onOpenReview, onOpenWorkspace }) {
   if (!node) return <aside className="side-panel evidence-drawer"><div className="panel-title">Evidence drawer</div><div className="panel-name">{entityOverview ? 'All canonical companies' : 'Choose a lens'}</div><div className="panel-kind">{entityOverview ? 'Use the company lens control or select a visible company to inspect its one-hop evidence.' : 'Select a company, topic, or institution to focus the graph.'}</div><StatusBadge status={evidenceStatus(null)} /><div className="notice">{entityOverview ? 'This overview shows every loaded canonical entity. It does not imply a relationship among them.' : 'Collapsed clusters retain the scope of omitted evidence without presenting it as a relationship.'}</div></aside>;
   const status = evidenceStatus(node);
   const source = sourceFor(node, graph, nodeMap);
   const lineage = lineageFor(node, graph, nodeMap);
   const fields = Object.entries(node.fields || {}).filter(([key, value]) => value !== null && value !== undefined && value !== '' && !['run_id', 'source_record_id', 'content_sha256'].includes(key));
   const sourceLink = node.fields?.source_url || node.fields?.url || node.fields?.work_id?.startsWith('http') && node.fields.work_id || source?.fields?.source_uri;
-  return <aside className="side-panel evidence-drawer"><div className="panel-title">Evidence drawer</div><div className="panel-name">{node.name}</div><div className="panel-kind">{node.kind}</div><StatusBadge status={status} /><p className="status-detail">{status.detail}</p><button className="open-workspace" onClick={onOpenWorkspace}>Open full entity evidence <span aria-hidden="true">↗</span></button><div className="lineage"><span>Lineage</span><strong>{lineage.join(' → ') || 'Source path unavailable'}</strong></div>{sourceLink && <a className="source-link" href={sourceLink} target="_blank" rel="noreferrer">Open original source <span aria-hidden="true">↗</span></a>}<dl>{fields.slice(0, 7).map(([key, value]) => <React.Fragment key={key}><dt>{fieldLabel(key)}</dt><dd>{typeof value === 'string' && /^https?:\/\//.test(value) ? <a href={value} target="_blank" rel="noreferrer">Open record ↗</a> : displayValue(key, value)}</dd></React.Fragment>)}</dl><div className={`notice ${status.tone === 'candidate' ? 'caution' : ''}`}>{status.tone === 'candidate' ? 'This item is discoverable evidence only. It cannot support a conclusion until analyst review.' : 'Source lineage is preserved through the original record, retrieval context, and evidence classification.'}</div></aside>;
+  return <aside className="side-panel evidence-drawer"><div className="panel-title">Evidence drawer</div><div className="panel-name">{node.name}</div><div className="panel-kind">{node.kind}</div><StatusBadge status={status} /><p className="status-detail">{status.detail}</p>{reviewCandidate && <button className="review-in-drawer" onClick={onOpenReview}>Review pending connection <span aria-hidden="true">→</span></button>}<button className="open-workspace" onClick={onOpenWorkspace}>Open full entity evidence <span aria-hidden="true">↗</span></button><div className="lineage"><span>Lineage</span><strong>{lineage.join(' → ') || 'Source path unavailable'}</strong></div>{sourceLink && <a className="source-link" href={sourceLink} target="_blank" rel="noreferrer">Open original source <span aria-hidden="true">↗</span></a>}<dl>{fields.slice(0, 7).map(([key, value]) => <React.Fragment key={key}><dt>{fieldLabel(key)}</dt><dd>{typeof value === 'string' && /^https?:\/\//.test(value) ? <a href={value} target="_blank" rel="noreferrer">Open record ↗</a> : displayValue(key, value)}</dd></React.Fragment>)}</dl><div className={`notice ${status.tone === 'candidate' ? 'caution' : ''}`}>{status.tone === 'candidate' ? 'This item is discoverable evidence only. It cannot support a conclusion until analyst review.' : 'Source lineage is preserved through the original record, retrieval context, and evidence classification.'}</div></aside>;
+}
+
+function ReviewDecisionModal({ candidate, nodeMap, submitting, error, onClose, onSubmit }) {
+  const [note, setNote] = useState('');
+  const [action, setAction] = useState(candidate.reviewStatus === 'unreviewed' ? 'approve' : 'reopen');
+  const source = nodeMap[candidate.sourceRecordId];
+  const canResolve = candidate.reviewStatus === 'unreviewed';
+  const requiresNote = action !== 'reopen';
+  const submit = () => onSubmit({ candidateId: candidate.candidateId, action, note });
+  return <section className="review-decision-modal" role="dialog" aria-modal="true" aria-labelledby="review-decision-title"><div className="workspace-header"><div><div className="panel-title">Analyst review</div><h2 id="review-decision-title">{candidate.candidateEntityName}</h2><p>{source?.name || candidate.sourceName} · {candidate.sector || 'Unassigned sector'}</p></div><button className="icon-button" onClick={onClose} disabled={submitting} aria-label="Close analyst review">×</button></div><div className="review-decision-summary"><strong>{Math.round(Number(candidate.matchScore || 0) * 100)}% proposed match</strong><span>{(candidate.matchMethod || 'match method').replaceAll('_', ' ')}</span><span>Reviewer is resolved from the {candidate.sector || 'candidate'} sector configuration.</span></div><label className="review-action-label">Decision<select value={action} onChange={(event) => setAction(event.target.value)} disabled={submitting}>{canResolve ? <><option value="approve">Approve connection</option><option value="reject">Reject connection</option></> : <option value="reopen">Reopen for review</option>}</select></label><label className="review-note-label">{requiresNote ? 'Analyst note (required)' : 'Analyst note (optional)'}<textarea value={note} onChange={(event) => setNote(event.target.value)} disabled={submitting} placeholder={action === 'approve' ? 'Why does this source record support the canonical-company match?' : action === 'reject' ? 'Why should this proposed match not be used?' : 'Why is this decision being reopened?'} /></label>{error && <p className="review-error">{error}</p>}<div className="review-modal-actions"><button onClick={onClose} disabled={submitting}>Cancel</button><button className={`review-submit ${action}`} disabled={submitting || (requiresNote && !note.trim())} onClick={submit}>{submitting ? 'Saving…' : action === 'approve' ? 'Approve and verify' : action === 'reject' ? 'Reject candidate' : 'Reopen candidate'}</button></div><p className="review-audit-note">This records a new audit event. It never rewrites the source candidate or earlier analyst decisions.</p></section>;
 }
 
 function EvidenceWorkspace({ node, graph, nodeMap, onClose, onSelect }) {
