@@ -35,6 +35,9 @@ def _records(connection, table: str, key: str, limit: int) -> list[dict]:
 
 def _patent_catalog_records(connection, limit: int) -> list[dict]:
     with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass(%s)", ("diligence.patent_catalog",))
+        if cursor.fetchone()[0] is None:
+            return _records(connection, "patent_records", "patent_id", limit)
         cursor.execute("""
             SELECT patent_id, record, updated_at
             FROM diligence.patent_catalog
