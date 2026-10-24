@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { graph as fixtureGraph } from './data';
 import './styles.css';
@@ -115,23 +115,76 @@ function findNeighbor(graph, nodeId, predicate) {
   return graph.nodes.find((node) => neighborIds.has(node.id) && predicate(node)) || null;
 }
 
+function defaultLens(graph) {
+  return findNode(graph, [
+    (node) => node.type === 'entity',
+    (node) => node.type === 'institution',
+    (node) => node.type === 'topic',
+  ]) || graph.nodes[0] || null;
+}
+
+function neighborsFor(graph, nodeId) {
+  if (!nodeId) return new Set();
+  return new Set(graph.edges.flatMap((edge) => edge.a === nodeId ? [edge.b] : edge.b === nodeId ? [edge.a] : []));
+}
+
+function evidenceStatus(node) {
+  const fields = node?.fields || {};
+  const review = `${fields.review || ''} ${fields.review_status || ''} ${fields.status || ''}`.toLowerCase();
+  if (!node) return { label: 'Unavailable', tone: 'unavailable', detail: 'No evidence record is selected.' };
+  if (review.includes('accepted') || review.includes('verified')) return { label: 'Verified', tone: 'verified', detail: 'Reviewed exact-identifier evidence.' };
+  if (review.includes('candidate') || review.includes('unreviewed')) return { label: 'Candidate / unreviewed', tone: 'candidate', detail: 'Requires analyst review before use as a conclusion.' };
+  if (node.type === 'topic') return { label: 'Inferred', tone: 'inferred', detail: 'A deterministic topic observation, not a verified relationship.' };
+  return { label: 'Source-derived', tone: 'derived', detail: 'Preserved from the cited source record.' };
+}
+
+function sourceFor(node, graph, nodeMap) {
+  const direct = [...neighborsFor(graph, node?.id)].map((id) => nodeMap[id]).find((candidate) => candidate?.type === 'source');
+  if (direct) return direct;
+  const intermediate = [...neighborsFor(graph, node?.id)].map((id) => nodeMap[id]).find(Boolean);
+  return intermediate && [...neighborsFor(graph, intermediate.id)].map((id) => nodeMap[id]).find((candidate) => candidate?.type === 'source');
+}
+
+function lineageFor(node, graph, nodeMap) {
+  if (!node) return [];
+  const source = sourceFor(node, graph, nodeMap);
+  const related = [...neighborsFor(graph, node.id)].map((id) => nodeMap[id]).find((candidate) => candidate && candidate.type !== 'source');
+  const kind = node.kind.split(' · ')[0];
+  return [source?.name, kind, related && related.kind.split(' · ')[0]].filter(Boolean);
+}
+
+function displayValue(key, value) {
+  if (value === null || value === undefined || value === '') return 'Not supplied';
+  if (key.endsWith('_usd') && typeof value === 'number') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+  if (typeof value === 'object') return value.quote_or_excerpt || value.locator || JSON.stringify(value);
+  return String(value);
+}
+
+function fieldLabel(key) {
+  return ({ source_url: 'Original record', source_record_id: 'Source record', source_id: 'Source', retrieved_at: 'Retrieved', publication_date: 'Publication date', base_obligation_date: 'Base obligation date', obligated_amount_usd: 'Obligated amount', total_obligated_usd: 'Total obligated', institution_id: 'Institution ID', work_id: 'Research work', patent_id: 'Patent ID', entity_id: 'Canonical entity', review: 'Evidence classification', review_status: 'Review status' }[key] || key.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()));
+}
+
 function App() {
-  const [graph, setGraph] = useState(fixtureGraph);
-  const [mode, setMode] = useState('fixture');
-  const [apiState, setApiState] = useState('idle');
+  const [graph, setGraph] = useState(emptyGraph);
+  const [mode, setMode] = useState('postgres');
+  const [apiState, setApiState] = useState('loading');
   const [apiError, setApiError] = useState('');
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
+  const [expandedTypes, setExpandedTypes] = useState([]);
+  const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
   const [activeStoryId, setActiveStoryId] = useState(null);
   const [storyStep, setStoryStep] = useState(0);
+  const panRef = useRef(null);
   const normalizedQuery = query.trim().toLowerCase();
   const nodeMap = useMemo(() => Object.fromEntries(graph.nodes.map((node) => [node.id, node])), [graph]);
   const selectedNode = selected ? nodeMap[selected] : null;
   const activeStory = guidedStories.find((story) => story.id === activeStoryId) || null;
   const activeStoryStep = activeStory?.steps[storyStep] || null;
   const guidedTarget = useMemo(() => activeStoryStep?.resolve(graph) || null, [activeStoryStep, graph]);
+  const effectiveLive = mode === 'postgres' && apiState === 'ready';
 
   useEffect(() => {
     if (mode !== 'postgres') return;
@@ -145,8 +198,8 @@ function App() {
         if (!response.ok) throw new Error(payload.detail || payload.error || 'API request failed');
         return payload;
       })
-      .then((payload) => { if (!cancelled) { setGraph(payload); setApiState('ready'); setSelected(null); } })
-      .catch((error) => { if (!cancelled) { setGraph(emptyGraph); setApiState('error'); setApiError(error.message || 'Start the local knowledge API and try again.'); } });
+      .then((payload) => { if (!cancelled) { setGraph(payload); setApiState('ready'); setSelected(defaultLens(payload)?.id || null); setExpandedTypes([]); setViewport({ x: 0, y: 0, scale: 1 }); } })
+      .catch((error) => { if (!cancelled) { setGraph(fixtureGraph); setApiState('error'); setApiError(error.message || 'Start the local knowledge API and try again.'); setSelected(defaultLens(fixtureGraph)?.id || null); } });
     return () => { cancelled = true; };
   }, [mode]);
 
@@ -170,22 +223,38 @@ function App() {
     return matchesQuery && matchesFilter;
   };
 
-  const neighborIds = useMemo(() => {
-    if (!selected) return new Set();
-    return new Set(graph.edges.flatMap((edge) => {
-      if (edge.a === selected) return [edge.b];
-      if (edge.b === selected) return [edge.a];
-      return [];
-    }));
-  }, [selected, graph]);
-
-  const isDimmed = (node) => !visible(node) || (selected && node.id !== selected && !neighborIds.has(node.id));
-  const isConnected = (edge) => selected && (edge.a === selected || edge.b === selected);
+  const neighborIds = useMemo(() => neighborsFor(graph, selected), [graph, selected]);
+  const focusedIds = useMemo(() => new Set(selected ? [selected, ...neighborIds] : []), [selected, neighborIds]);
+  const renderedNodes = useMemo(() => graph.nodes.filter((node) => visible(node) && (!selected || focusedIds.has(node.id) || expandedTypes.includes(node.type))), [graph, selected, focusedIds, expandedTypes, filter, normalizedQuery]);
+  const renderedNodeMap = useMemo(() => Object.fromEntries(renderedNodes.map((node) => [node.id, node])), [renderedNodes]);
+  const renderedEdges = useMemo(() => graph.edges.filter((edge) => renderedNodeMap[edge.a] && renderedNodeMap[edge.b]), [graph, renderedNodeMap]);
+  const clusters = useMemo(() => {
+    if (!selected) return [];
+    const counts = new Map();
+    graph.nodes.filter((node) => visible(node) && !focusedIds.has(node.id) && !expandedTypes.includes(node.type)).forEach((node) => counts.set(node.type, (counts.get(node.type) || 0) + 1));
+    return [...counts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count);
+  }, [graph, selected, focusedIds, expandedTypes, filter, normalizedQuery]);
+  const metrics = useMemo(() => {
+    const counts = graph.nodes.reduce((accumulator, node) => ({ ...accumulator, [node.type]: (accumulator[node.type] || 0) + 1 }), {});
+    return [
+      { label: 'Focused lens', value: selectedNode?.name || 'Choose a node', detail: selected ? `${neighborIds.size} direct evidence relationships` : 'Start with a company, topic, or institution' },
+      { label: 'Technology evidence', value: `${counts.research || 0} research · ${counts.patent || 0} patents`, detail: 'OpenAlex and USPTO-derived records' },
+      { label: 'Public awards', value: `${counts.award || 0} awards · ${counts.recipient || 0} recipients`, detail: 'Bounded USAspending records' },
+      { label: 'Canonical identity', value: `${counts.entity || 0} companies`, detail: 'SEC-derived identity records' },
+    ];
+  }, [graph, selectedNode, selected, neighborIds]);
 
   const setDataMode = (nextMode) => {
     setMode(nextMode);
-    if (nextMode === 'fixture') { setGraph(fixtureGraph); setApiState('idle'); setApiError(''); setSelected(null); }
+    if (nextMode === 'fixture') { setGraph(fixtureGraph); setApiState('idle'); setApiError(''); setSelected(defaultLens(fixtureGraph)?.id || null); setExpandedTypes([]); setViewport({ x: 0, y: 0, scale: 1 }); }
   };
+
+  const selectLens = (nodeId) => { setSelected(nodeId); setExpandedTypes([]); setViewport({ x: 0, y: 0, scale: 1 }); };
+  const toggleCluster = (type) => setExpandedTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
+  const zoomBy = (amount) => setViewport((current) => ({ ...current, scale: Math.max(0.6, Math.min(2.4, Number((current.scale + amount).toFixed(2)))) }));
+  const panStart = (event) => { if (event.target.closest?.('.node')) return; panRef.current = { x: event.clientX, y: event.clientY, origin: viewport }; event.currentTarget.setPointerCapture?.(event.pointerId); };
+  const panMove = (event) => { if (!panRef.current) return; const bounds = event.currentTarget.getBoundingClientRect(); const factor = 1120 / bounds.width / panRef.current.origin.scale; setViewport((current) => ({ ...current, x: panRef.current.origin.x + (event.clientX - panRef.current.x) * factor, y: panRef.current.origin.y + (event.clientY - panRef.current.y) * factor })); };
+  const panEnd = () => { panRef.current = null; };
 
   const startStory = (storyId) => {
     setActiveStoryId(storyId);
@@ -210,9 +279,9 @@ function App() {
         <div>
           <div className="eyebrow">Investment Diligence Platform / Evidence Universe</div>
             <h1>Investment Diligence Knowledge Graph</h1>
-          <p className="subtitle">{mode === 'postgres' ? 'A live, read-only evidence graph spanning company identity, technology, public awards, and source lineage.' : 'A fixture-backed prototype of identity, technology, research, and lineage signals. Every visible relationship is inspectable.'}</p>
+          <p className="subtitle">{effectiveLive ? 'A live, read-only evidence graph spanning company identity, technology, public awards, and source lineage.' : 'A source-traceable fixture fallback is available whenever the live graph cannot be reached.'}</p>
         </div>
-        <div className={`status ${mode === 'postgres' && apiState === 'ready' ? 'live' : ''}`}><i /> {mode === 'postgres' ? apiState === 'loading' ? 'CONNECTING TO POSTGRES' : apiState === 'error' ? 'POSTGRES UNAVAILABLE' : 'LIVE POSTGRES · READ ONLY' : 'FIXTURE MODE · SOURCE-TRACEABLE'}</div>
+        <div className={`status ${effectiveLive ? 'live' : ''}`}><i /> {mode === 'postgres' ? apiState === 'loading' ? 'CONNECTING TO POSTGRES' : apiState === 'error' ? 'LIVE UNAVAILABLE · FIXTURE FALLBACK' : 'LIVE POSTGRES · READ ONLY' : 'FIXTURE MODE · SOURCE-TRACEABLE'}</div>
       </header>
 
       <nav className="toolbar" aria-label="Graph filters">
@@ -221,42 +290,49 @@ function App() {
             {option === 'all' ? 'All signals' : option === 'sources' ? 'Sources only' : `Pipeline ${option}`}
           </button>
         ))}
-        <button onClick={() => { setSelected(null); setQuery(''); setFilter('all'); }}>Reset focus</button>
-        <span className="mode-label">Data:</span>
-        <button className={mode === 'fixture' ? 'active' : ''} onClick={() => setDataMode('fixture')}>Embedded fixture</button>
-        <button className={mode === 'postgres' ? 'active live-button' : ''} onClick={() => setDataMode('postgres')}>Live PostgreSQL</button>
+        <button onClick={() => { selectLens(defaultLens(graph)?.id || null); setQuery(''); setFilter('all'); }}>Reset lens</button>
+        {!activeStory && <button className={`data-switch ${effectiveLive ? 'live-button' : ''}`} onClick={() => setDataMode(mode === 'postgres' ? 'fixture' : 'postgres')}>{effectiveLive ? '● Live data' : '○ Fixture fallback'}</button>}
+        {activeStory && <span className={`demo-data-status ${effectiveLive ? 'live' : ''}`}>{effectiveLive ? '● Live evidence' : '○ Fixture fallback'}</span>}
         <button className={`demo-button ${activeStory ? 'active' : ''}`} onClick={() => setStoryPickerOpen((open) => !open)} aria-expanded={storyPickerOpen}>▶ Guided demo</button>
         <input value={query} onChange={(event) => setQuery(event.target.value)} className="search" type="search" placeholder="Search the evidence universe…" aria-label="Search graph nodes" />
       </nav>
+
+      <section className="insight-row" aria-label="Graph insights">
+        {metrics.map((metric) => <article className="insight-card" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></article>)}
+      </section>
 
       <main className="stage">
         {storyPickerOpen && <StoryPicker stories={guidedStories} onStart={startStory} onClose={() => setStoryPickerOpen(false)} />}
         {activeStory && <StoryPresenter story={activeStory} step={storyStep} target={guidedTarget} onBack={() => setStoryStep((current) => Math.max(0, current - 1))} onNext={advanceStory} onExit={exitStory} />}
         {mode === 'postgres' && apiState !== 'ready' && <div className={`connection-banner ${apiState === 'error' ? 'error' : ''}`}><strong>{apiState === 'loading' ? 'Loading live PostgreSQL graph…' : 'Live PostgreSQL is unavailable'}</strong><span>{apiState === 'error' ? apiError : 'The fixture graph is intentionally hidden while live data is loading.'}</span></div>}
-        <svg viewBox="0 0 1120 590" role="img" aria-label="Interactive investment diligence knowledge graph of source-backed evidence relationships">
+        <ClusterRail clusters={clusters} expandedTypes={expandedTypes} onToggle={toggleCluster} onCollapse={() => setExpandedTypes([])} />
+        <div className="viewport-controls" aria-label="Graph zoom controls"><button onClick={() => zoomBy(-0.2)} aria-label="Zoom out">−</button><button onClick={() => setViewport({ x: 0, y: 0, scale: 1 })} aria-label="Reset graph view">◎</button><button onClick={() => zoomBy(0.2)} aria-label="Zoom in">+</button></div>
+        <svg viewBox="0 0 1120 590" role="img" aria-label="Interactive investment diligence knowledge graph of source-backed evidence relationships" onWheel={(event) => { event.preventDefault(); zoomBy(event.deltaY > 0 ? -0.12 : 0.12); }} onPointerDown={panStart} onPointerMove={panMove} onPointerUp={panEnd} onPointerLeave={panEnd}>
           <defs><radialGradient id="core"><stop offset="0" stopColor="#8c7dff" stopOpacity=".32" /><stop offset="1" stopColor="#8c7dff" stopOpacity="0" /></radialGradient></defs>
-          <g className="stars">{[[34,84],[115,260],[208,74],[333,506],[530,60],[693,514],[849,78],[1032,330],[1100,545]].map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />)}</g>
-          <ellipse cx="555" cy="285" rx="390" ry="260" fill="url(#core)" />
-          <Lane x="20" width="175" label="Sources" />
-          <Lane x="215" width="175" label="Capture + identity" />
-          <Lane x="410" width="205" label="Entities + recipients" />
-          <Lane x="635" width="205" label="Research, patents + awards" />
-          <Lane x="860" width="235" label="Evidence details" />
-          <g className="edges">
-            {graph.edges.map((edge) => {
-              const a = nodeMap[edge.a]; const b = nodeMap[edge.b];
-              const dimmed = selected ? !isConnected(edge) : !visible(a) || !visible(b);
-              return <g key={`${edge.a}-${edge.b}`} className={dimmed ? 'dim' : ''}>
-                <line className={`edge ${edge.className || ''} ${isConnected(edge) ? 'highlight' : ''}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+          <g transform={`translate(${viewport.x} ${viewport.y}) translate(560 295) scale(${viewport.scale}) translate(-560 -295)`}>
+            <g className="stars">{[[34,84],[115,260],[208,74],[333,506],[530,60],[693,514],[849,78],[1032,330],[1100,545]].map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />)}</g>
+            <ellipse cx="555" cy="285" rx="390" ry="260" fill="url(#core)" />
+            <Lane x="20" width="175" label="Sources" />
+            <Lane x="215" width="175" label="Capture + identity" />
+            <Lane x="410" width="205" label="Entities + recipients" />
+            <Lane x="635" width="205" label="Research, patents + awards" />
+            <Lane x="860" width="235" label="Evidence details" />
+            <g className="edges">
+            {renderedEdges.map((edge) => {
+              const a = renderedNodeMap[edge.a]; const b = renderedNodeMap[edge.b];
+              const connected = selected && (edge.a === selected || edge.b === selected);
+              return <g key={`${edge.a}-${edge.b}`}>
+                <line className={`edge ${edge.className || ''} ${connected ? 'highlight' : ''}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
                 <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 7} textAnchor="middle">{edge.label}</text>
               </g>;
             })}
-          </g>
-          <g className="nodes">
-            {graph.nodes.map((node) => <Node key={node.id} node={node} dimmed={isDimmed(node)} selected={selected === node.id} guided={guidedTarget?.id === node.id} onSelect={setSelected} />)}
+            </g>
+            <g className="nodes">
+            {renderedNodes.map((node) => <Node key={node.id} node={node} selected={selected === node.id} guided={guidedTarget?.id === node.id} onSelect={selectLens} />)}
+            </g>
           </g>
         </svg>
-        <EvidencePanel node={selectedNode} />
+        <EvidencePanel node={selectedNode} graph={graph} nodeMap={nodeMap} />
       </main>
 
       <footer className="legend">
@@ -290,9 +366,14 @@ function StoryPresenter({ story, step, target, onBack, onNext, onExit }) {
 
 function Lane({ x, width, label }) { return <><rect className="lane" x={x} y="38" width={width} height="510" rx="18" /><text className="lane-label" x={x + 20} y="68">{label}</text></>; }
 
-function Node({ node, dimmed, selected, guided, onSelect }) {
+function ClusterRail({ clusters, expandedTypes, onToggle, onCollapse }) {
+  if (!clusters.length && !expandedTypes.length) return null;
+  return <aside className="cluster-rail" aria-label="Collapsed evidence clusters"><div><div className="panel-title">Collapsed evidence</div><span>Expand a type to add it to this lens.</span></div>{clusters.map((cluster) => <button key={cluster.type} onClick={() => onToggle(cluster.type)}><strong>{cluster.count}</strong> {cluster.type.replaceAll('_', ' ')} <b>+</b></button>)}{expandedTypes.length > 0 && <button className="collapse-button" onClick={onCollapse}>Collapse expanded records</button>}</aside>;
+}
+
+function Node({ node, selected, guided, onSelect }) {
   const size = node.type === 'entity' ? 16 : node.type === 'source' ? 13 : 10;
-  return <g className={`node ${node.type} ${dimmed ? 'dim' : ''} ${selected ? 'selected' : ''} ${guided ? 'guided' : ''}`} onClick={() => onSelect(node.id)} tabIndex="0" role="button" aria-label={node.name} onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && onSelect(node.id)}>
+  return <g className={`node ${node.type} ${selected ? 'selected' : ''} ${guided ? 'guided' : ''}`} onClick={(event) => { event.stopPropagation(); onSelect(node.id); }} tabIndex="0" role="button" aria-label={node.name} onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && onSelect(node.id)}>
     {guided && <circle className="guided-ring" cx={node.x} cy={node.y} r={size + 12} />}
     <circle cx={node.x} cy={node.y} r={size} />
     <text x={node.x} y={node.y + size + 18} textAnchor="middle">{node.name}</text>
@@ -300,11 +381,17 @@ function Node({ node, dimmed, selected, guided, onSelect }) {
   </g>;
 }
 
-function EvidencePanel({ node }) {
-  if (!node) return <aside className="side-panel"><div className="panel-title">Selected evidence</div><div className="panel-name">Select a node</div><div className="panel-kind">The graph will isolate its evidence neighborhood.</div><div className="notice">Dashed edges indicate candidate or unreviewed relationships. They are not confirmations of ownership or employment.</div></aside>;
-  const caution = node.type === 'person' || node.id === 'energy';
-  return <aside className="side-panel"><div className="panel-title">Selected evidence</div><div className="panel-name">{node.name}</div><div className="panel-kind">{node.kind}</div><dl>{Object.entries(node.fields).map(([key, value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl><div className={`notice ${caution ? 'caution' : ''}`}>{caution ? 'Caution: this is source evidence only. It does not confirm employment, ownership, control, or technology quality.' : 'Lineage is preserved through the source record, adapter version, retrieval status, and content hash.'}</div></aside>;
+function EvidencePanel({ node, graph, nodeMap }) {
+  if (!node) return <aside className="side-panel evidence-drawer"><div className="panel-title">Evidence drawer</div><div className="panel-name">Choose a lens</div><div className="panel-kind">Select a company, topic, or institution to focus the graph.</div><StatusBadge status={evidenceStatus(null)} /><div className="notice">Collapsed clusters retain the scope of omitted evidence without presenting it as a relationship.</div></aside>;
+  const status = evidenceStatus(node);
+  const source = sourceFor(node, graph, nodeMap);
+  const lineage = lineageFor(node, graph, nodeMap);
+  const fields = Object.entries(node.fields || {}).filter(([key, value]) => value !== null && value !== undefined && value !== '' && !['run_id', 'source_record_id', 'content_sha256'].includes(key));
+  const sourceLink = node.fields?.source_url || node.fields?.url || node.fields?.work_id?.startsWith('http') && node.fields.work_id || source?.fields?.source_uri;
+  return <aside className="side-panel evidence-drawer"><div className="panel-title">Evidence drawer</div><div className="panel-name">{node.name}</div><div className="panel-kind">{node.kind}</div><StatusBadge status={status} /><p className="status-detail">{status.detail}</p><div className="lineage"><span>Lineage</span><strong>{lineage.join(' → ') || 'Source path unavailable'}</strong></div>{sourceLink && <a className="source-link" href={sourceLink} target="_blank" rel="noreferrer">Open original source <span aria-hidden="true">↗</span></a>}<dl>{fields.slice(0, 7).map(([key, value]) => <React.Fragment key={key}><dt>{fieldLabel(key)}</dt><dd>{typeof value === 'string' && /^https?:\/\//.test(value) ? <a href={value} target="_blank" rel="noreferrer">Open record ↗</a> : displayValue(key, value)}</dd></React.Fragment>)}</dl><div className={`notice ${status.tone === 'candidate' ? 'caution' : ''}`}>{status.tone === 'candidate' ? 'This item is discoverable evidence only. It cannot support a conclusion until analyst review.' : 'Source lineage is preserved through the original record, retrieval context, and evidence classification.'}</div></aside>;
 }
+
+function StatusBadge({ status }) { return <div className={`status-badge ${status.tone}`}><i />{status.label}</div>; }
 
 function Legend({ color, label }) { return <span><i style={{ background: color }} />{label}</span>; }
 
