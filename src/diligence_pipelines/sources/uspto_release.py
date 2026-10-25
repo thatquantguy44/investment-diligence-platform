@@ -37,16 +37,23 @@ def compare_bulk_releases(previous: Path, current: Path, max_examples: int = 100
     }
 
 
-def profile_bulk_release(path: Path, sample_limit: int = 5000, max_age_days: int | None = None) -> dict:
+def profile_bulk_release(path: Path, sample_limit: int = 5000, max_age_days: int | None = None, warning_age_days: int | None = None) -> dict:
     """Profile release shape, normalized coverage, and optional date freshness."""
     if sample_limit < 1:
         raise ValueError("sample_limit must be at least 1")
+    if max_age_days is not None and max_age_days < 0:
+        raise ValueError("max_age_days must not be negative")
+    if warning_age_days is not None and warning_age_days < 0:
+        raise ValueError("warning_age_days must not be negative")
     raw_count = 0
     normalized_count = 0
     missing_id = 0
     missing_title = 0
     fields: set[str] = set()
-    patent_dates: list[date] = []
+    latest_patent_date: date | None = None
+    future_patent_date_count = 0
+    invalid_patent_date_count = 0
+    today = datetime.now(timezone.utc).date()
     for row in iter_bulk_rows(path):
         raw_count += 1
         if raw_count <= sample_limit:
@@ -62,15 +69,21 @@ def profile_bulk_release(path: Path, sample_limit: int = 5000, max_age_days: int
         raw_date = next((row.get(key) for key in ("patent_date", "grant_date", "publication_date", "filing_date") if row.get(key) not in (None, "")), None)
         if raw_date:
             try:
-                patent_dates.append(date.fromisoformat(str(raw_date)[:10]))
+                parsed_date = date.fromisoformat(str(raw_date)[:10])
             except ValueError:
-                pass
-    latest_date = max(patent_dates).isoformat() if patent_dates else None
-    freshness_days = None
-    freshness_status = "unknown"
-    if latest_date:
-        freshness_days = (datetime.now(timezone.utc).date() - date.fromisoformat(latest_date)).days
-        freshness_status = "pass" if max_age_days is None or freshness_days <= max_age_days else "fail"
+                invalid_patent_date_count += 1
+            else:
+                latest_patent_date = parsed_date if latest_patent_date is None else max(latest_patent_date, parsed_date)
+                if parsed_date > today:
+                    future_patent_date_count += 1
+    latest_date = latest_patent_date.isoformat() if latest_patent_date else None
+    freshness_days = (today - latest_patent_date).days if latest_patent_date else None
+    if freshness_days is None or future_patent_date_count or (max_age_days is not None and freshness_days > max_age_days):
+        freshness_status = "fail"
+    elif warning_age_days is not None and freshness_days > warning_age_days:
+        freshness_status = "stale_review_required"
+    else:
+        freshness_status = "pass"
     schema_status = "pass" if any(field in fields for field in ("patent_id", "patent_number", "publication_number", "document_number")) and any(field in fields for field in ("patent_title", "title", "invention_title")) else "fail"
     status = "pass" if raw_count > 0 and normalized_count > 0 and not missing_id and not missing_title and freshness_status != "fail" and schema_status == "pass" else "fail"
     return {
@@ -85,8 +98,11 @@ def profile_bulk_release(path: Path, sample_limit: int = 5000, max_age_days: int
         "latest_patent_date": latest_date,
         "freshness_days": freshness_days,
         "freshness_status": freshness_status,
+        "future_patent_date_count": future_patent_date_count,
+        "invalid_patent_date_count": invalid_patent_date_count,
         "sample_limit": sample_limit,
         "max_age_days": max_age_days,
+        "warning_age_days": warning_age_days,
         "coverage": {
             "normalized_rate": normalized_count / raw_count if raw_count else 0.0,
             "patent_id_completeness": 1 - (missing_id / raw_count) if raw_count else 0.0,

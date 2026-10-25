@@ -41,12 +41,15 @@ USPTO_ODP_DISCOVERY_OUTPUT: ".data/uspto/odp_discovery.json"
 USPTO_ODP_REVIEWED_SELECTION: ".data/uspto/reviewed_selection.json"
 USPTO_ODP_REFRESH_OUTPUT: ".data/uspto/g_patent.tsv.zip"
 USPTO_ODP_PREVIOUS_FILE: ""
-# Analyst-reviewed bounds are required before live refresh. Leave blank until
-# the quarterly release history and patent-data horizon have been reviewed.
-USPTO_ODP_MIN_SIZE_BYTES: ""
-USPTO_ODP_MAX_SIZE_BYTES: ""
-USPTO_ODP_MAX_RELEASE_AGE_DAYS: ""
-USPTO_ODP_REFRESH_MAX_AGE_DAYS: ""
+# Provisional bounds for the first reviewed PVGPATDIS acceptance run. Revisit
+# after observing multiple releases. Warnings require analyst review before
+# presenting prepared data as current; hard limits block the refresh.
+USPTO_ODP_MIN_SIZE_BYTES: "150000000"
+USPTO_ODP_MAX_SIZE_BYTES: "350000000"
+USPTO_ODP_WARN_RELEASE_AGE_DAYS: "150"
+USPTO_ODP_MAX_RELEASE_AGE_DAYS: "240"
+USPTO_ODP_WARN_PATENT_AGE_DAYS: "240"
+USPTO_ODP_REFRESH_MAX_AGE_DAYS: "330"
 
 # Optional UN Comtrade connector settings for Pipeline 03.
 # Preferred names when using two keys. The adapter tries primary first and

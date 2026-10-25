@@ -284,12 +284,14 @@ measurements, and their thresholds must be reviewed before acceptance.
 
 ## 7. Open decisions for review
 
-1. Which minimum and maximum artifact sizes should block a download, given
-   known release variation? The policy must have explicit values before live
-   refresh, not hard-coded guesses in the adapter.
-2. What release-age and data-horizon thresholds are acceptable for this
-   quarterly product? The current 45-day patent-date check may block a valid
-   quarterly release and should be evaluated from recorded release history.
+1. The first acceptance run uses provisional 150,000,000–350,000,000 byte
+   bounds for `PVGPATDIS/g_patent.tsv.zip`. Review observed release variation
+   before treating those bounds as steady-state policy.
+2. The first acceptance run warns after 150 release-age days or 240 patent-data
+   age days, and blocks after 240 or 330 days respectively. Unknown or future
+   newest patent dates block preparation. A stale but allowed file can be
+   prepared with a review-required label; it must not be presented as current
+   without analyst review. Reassess these thresholds from release history.
 3. Immutable approval records use the persistent USPTO artifact volume with
    private OS permissions. The supersession policy still needs analyst review.
 4. Which sanitized source capture should become the checked-in contract

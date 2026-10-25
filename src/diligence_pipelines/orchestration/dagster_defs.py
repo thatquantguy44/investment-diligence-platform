@@ -30,7 +30,8 @@ def _metadata(report: dict) -> dict:
         "refresh_id": report.get("refresh_id", ""),
         "changed": bool(artifact.get("changed", False)),
         "source_sha256": artifact.get("content_sha256", ""),
-        "freshness_status": quality.get("freshness_status", "unknown"),
+        "freshness_status": report.get("data_freshness_status", quality.get("freshness_status", "unknown")),
+        "publication_status": report.get("publication_status", "not_started"),
         "normalized_record_count": quality.get("normalized_record_count", 0),
         "report_path": report.get("report_path", ""),
     }

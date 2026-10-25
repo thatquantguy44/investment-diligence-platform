@@ -36,6 +36,8 @@ class Settings:
     uspto_odp_min_size_bytes: int | None = None
     uspto_odp_max_size_bytes: int | None = None
     uspto_odp_max_release_age_days: int | None = None
+    uspto_odp_warn_release_age_days: int = 150
+    uspto_odp_warn_patent_age_days: int = 240
     alert_slack_webhook_url: str | None = None
     comtrade_api_key: str | None = None
     comtrade_api_key_primary: str | None = None
@@ -77,6 +79,8 @@ class Settings:
             "max_size_bytes": self.uspto_odp_max_size_bytes,
             "max_release_age_days": self.uspto_odp_max_release_age_days,
             "max_patent_age_days": self.uspto_odp_refresh_max_age_days,
+            "warn_release_age_days": self.uspto_odp_warn_release_age_days,
+            "warn_patent_age_days": self.uspto_odp_warn_patent_age_days,
         }
 
     @property
@@ -130,6 +134,8 @@ class Settings:
             uspto_odp_min_size_bytes=int(value("USPTO_ODP_MIN_SIZE_BYTES", "")) if value("USPTO_ODP_MIN_SIZE_BYTES", "") else None,
             uspto_odp_max_size_bytes=int(value("USPTO_ODP_MAX_SIZE_BYTES", "")) if value("USPTO_ODP_MAX_SIZE_BYTES", "") else None,
             uspto_odp_max_release_age_days=int(value("USPTO_ODP_MAX_RELEASE_AGE_DAYS", "")) if value("USPTO_ODP_MAX_RELEASE_AGE_DAYS", "") else None,
+            uspto_odp_warn_release_age_days=int(value("USPTO_ODP_WARN_RELEASE_AGE_DAYS", "150")),
+            uspto_odp_warn_patent_age_days=int(value("USPTO_ODP_WARN_PATENT_AGE_DAYS", "240")),
             alert_slack_webhook_url=value("DILIGENCE_ALERT_SLACK_WEBHOOK_URL", "") or None,
             comtrade_api_key=value("COMTRADE_API_KEY", "") or None,
             comtrade_api_key_primary=value("COMTRADE_API_KEY_PRIMARY", "") or value("COMTRADE_API_KEY", "") or None,

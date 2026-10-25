@@ -172,7 +172,7 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
         print(json.dumps({"status": "blocked", "report": str(report_path), "reason": report["reason"]}, indent=2))
         return 2
     try:
-        validate_refresh_policy(candidate, settings, max_age_days)
+        release_policy = validate_refresh_policy(candidate, settings, max_age_days)
         if not settings.uspto_api_key:
             raise ValueError("USPTO_API_KEY is required for a fresh product-detail recheck")
         detail_payload = fetch_odp_product(settings.uspto_odp_product_identifier, settings.uspto_api_key)
@@ -221,12 +221,32 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
             if artifact.content_sha256 != expected_checksum:
                 raise ValueError("Downloaded SHA-256 differs from provider checksum")
         archive = verify_patent_archive(temp_path, max_uncompressed_bytes=settings.uspto_odp_max_size_bytes * 20)
-        quality = profile_bulk_release(temp_path, max_age_days=settings.uspto_odp_refresh_max_age_days)
+        quality = profile_bulk_release(
+            temp_path,
+            max_age_days=settings.uspto_odp_refresh_max_age_days,
+            warning_age_days=settings.uspto_odp_warn_patent_age_days,
+        )
         quality["path"] = str(output)
+        if quality["freshness_status"] == "fail":
+            data_freshness_status = "blocked"
+        elif (release_policy["release_freshness_status"] == "stale_review_required"
+              or quality["freshness_status"] == "stale_review_required"):
+            data_freshness_status = "stale_review_required"
+        else:
+            data_freshness_status = "current"
+        publication_status = (
+            "blocked" if quality["status"] != "pass"
+            else "review_required" if data_freshness_status == "stale_review_required"
+            else "not_started"
+        )
         new_sha = artifact.content_sha256
         existing_sha = json.loads(sidecar.read_text()).get("content_sha256") if sidecar.exists() else None
         changed = existing_sha != new_sha or not output.exists()
-        previous_quality = profile_bulk_release(previous, max_age_days=settings.uspto_odp_refresh_max_age_days) if previous and previous.exists() and changed else None
+        previous_quality = profile_bulk_release(
+            previous,
+            max_age_days=settings.uspto_odp_refresh_max_age_days,
+            warning_age_days=settings.uspto_odp_warn_patent_age_days,
+        ) if previous and previous.exists() and changed else None
         diff = compare_bulk_releases(previous, temp_path, max_examples=max_examples) if previous and previous.exists() and changed else None
         report = {
             "refresh_id": str(uuid.uuid4()),
@@ -238,11 +258,14 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
             "artifact": {**artifact.__dict__, "path": str(output), "changed": changed},
             "archive": archive,
             "provider_checksum_status": "verified" if checksum else "unavailable",
+            "release_policy": release_policy,
+            "data_freshness_status": data_freshness_status,
             "quality": quality,
             "previous_quality": previous_quality,
             "diff": diff,
             "ingestion_status": "not_started",
-            "ingestion_command": f"PYTHONPATH=src python -m diligence_pipelines.cli ingest-uspto-bulk --patent-file {output}",
+            "publication_status": publication_status,
+            "ingestion_command": f"PYTHONPATH=src python -m diligence_pipelines.cli ingest-uspto-bulk --patent-file {output}" if publication_status == "not_started" else None,
         }
         if quality["status"] != "pass":
             report["reason"] = "USPTO archive record quality or patent-date freshness failed"

@@ -33,7 +33,16 @@ docker compose -f deploy/dagster/docker-compose.yml up --build -d
 The Dagster UI will be available at `http://localhost:3000`. Starting the
 runtime does not enable any schedule or trigger a source request.
 
-Set the configured analyst name, OS user, and all four reviewed size/freshness
-bounds in the runtime environment before attempting an approved refresh.
-Blank bounds block downloads. The six-hour discovery schedule remains stopped
-until a manual approved refresh passes its acceptance checks.
+Set the configured analyst name and OS user in the runtime environment before
+attempting an approved refresh. The template contains the provisional reviewed
+size and freshness bounds for `PVGPATDIS/g_patent.tsv.zip`; changing them
+invalidates prior discovery fingerprints and approvals. A prepared result with
+`stale_review_required` still requires analyst review before it is presented
+as current data or manually ingested. The six-hour discovery schedule remains
+stopped until a manual approved refresh passes its acceptance checks.
+
+For the manual acceptance run, create the discovery snapshot and approval on
+the mounted `/var/lib/diligence` artifact volume and use the same PostgreSQL
+capture store as the daemon. A host-only `.data` discovery or approval is not
+visible inside the container. The reviewer OS user setting must match the
+account that actually runs the review command in that environment.

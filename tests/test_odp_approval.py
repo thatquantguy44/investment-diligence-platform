@@ -15,6 +15,7 @@ from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp, revie
 from diligence_pipelines.settings import Settings
 from diligence_pipelines.sources.uspto_odp import BulkArtifact
 from diligence_pipelines.odp_execution import load_execution_state, record_outcome, request_retry, run_key_for_state
+from diligence_pipelines.odp_approval import validate_refresh_policy
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -86,7 +87,7 @@ def test_refresh_rejects_legacy_url_only_selection_before_download(tmp_path: Pat
 def test_refresh_blocks_changed_provider_detail_before_download(tmp_path: Path, monkeypatch):
     settings = replace(_settings(tmp_path), uspto_api_key="test-key", uspto_odp_min_size_bytes=1,
                        uspto_odp_max_size_bytes=300_000_000, uspto_odp_max_release_age_days=365,
-                       uspto_odp_refresh_max_age_days=10)
+                       uspto_odp_refresh_max_age_days=10, uspto_odp_warn_patent_age_days=0)
     discovery = _discovery(tmp_path, settings)
     selection = tmp_path / "selection.json"
     review_uspto_odp(discovery, 0, "Analyst", "Checked metadata", selection, settings)
@@ -114,17 +115,22 @@ def test_refresh_requires_reviewed_bounds_before_provider_request(tmp_path: Path
     assert "limits are required" in json.loads(report_path.read_text())["reason"]
 
 
-def _approved_small_release(tmp_path: Path, payload: bytes, provider_checksum: str | None = None):
-    today = datetime.now(timezone.utc).date().isoformat()
-    settings = replace(
-        _settings(tmp_path), uspto_api_key="test-key", uspto_odp_min_size_bytes=1,
-        uspto_odp_max_size_bytes=100_000, uspto_odp_max_release_age_days=1,
-        uspto_odp_refresh_max_age_days=1,
-    )
+def _approved_small_release(tmp_path: Path, payload: bytes, provider_checksum: str | None = None,
+                            *, settings: Settings | None = None, release_age_days: int = 0):
+    from datetime import timedelta
+
+    release_date = (datetime.now(timezone.utc).date() - timedelta(days=release_age_days)).isoformat()
+    if settings is None:
+        settings = replace(
+            _settings(tmp_path), uspto_api_key="test-key", uspto_odp_min_size_bytes=1,
+            uspto_odp_max_size_bytes=100_000, uspto_odp_max_release_age_days=1,
+            uspto_odp_refresh_max_age_days=1,
+            uspto_odp_warn_release_age_days=0, uspto_odp_warn_patent_age_days=0,
+        )
     detail = json.loads(Path("tests/fixtures/odp_product_PVGPATDIS.json").read_text())
     file = detail["bulkDataProductBag"][0]["productFileBag"]["fileDataBag"][0]
     file["fileSize"] = len(payload)
-    file["fileReleaseDate"] = f"{today} 12:00:00"
+    file["fileReleaseDate"] = f"{release_date} 12:00:00"
     if provider_checksum is not None:
         file["fileChecksum"] = provider_checksum
     detail_bytes = json.dumps(detail).encode()
@@ -137,10 +143,11 @@ def _approved_small_release(tmp_path: Path, payload: bytes, provider_checksum: s
     return settings, selection, detail_bytes
 
 
-def _zip_payload() -> bytes:
+def _zip_payload(patent_date: str | None = None) -> bytes:
     buffer = io.BytesIO()
     with ZipFile(buffer, "w") as archive:
-        archive.writestr("g_patent.tsv", f"patent_id\tpatent_title\tpatent_date\nT1\tDemo patent\t{datetime.now(timezone.utc).date().isoformat()}\n")
+        date_value = patent_date or datetime.now(timezone.utc).date().isoformat()
+        archive.writestr("g_patent.tsv", f"patent_id\tpatent_title\tpatent_date\nT1\tDemo patent\t{date_value}\n")
     return buffer.getvalue()
 
 
@@ -161,6 +168,74 @@ def test_refresh_prepares_verified_archive_without_ingestion(tmp_path: Path, mon
     assert report["status"] == "prepared"
     assert report["ingestion_status"] == "not_started"
     assert output.read_bytes() == payload
+
+
+def test_refresh_prepares_stale_baseline_with_review_required_label(tmp_path: Path, monkeypatch):
+    from datetime import timedelta
+
+    patent_date = (datetime.now(timezone.utc).date() - timedelta(days=298)).isoformat()
+    payload = _zip_payload(patent_date)
+    settings = replace(
+        _settings(tmp_path), uspto_api_key="test-key", uspto_odp_min_size_bytes=1,
+        uspto_odp_max_size_bytes=100_000, uspto_odp_warn_release_age_days=150,
+        uspto_odp_max_release_age_days=240, uspto_odp_warn_patent_age_days=240,
+        uspto_odp_refresh_max_age_days=330,
+    )
+    settings, selection, detail = _approved_small_release(
+        tmp_path, payload, settings=settings, release_age_days=198,
+    )
+    monkeypatch.setattr("diligence_pipelines.cli.fetch_odp_product", lambda *args: detail)
+
+    def fake_download(url, destination, api_key=None, **kwargs):
+        destination.write_bytes(payload)
+        return BulkArtifact(str(destination), url, datetime.now(timezone.utc).isoformat(), hashlib.sha256(payload).hexdigest(), len(payload), 200)
+
+    monkeypatch.setattr("diligence_pipelines.cli.download_bulk_artifact", fake_download)
+    output = tmp_path / "g_patent.tsv.zip"
+    report_path = tmp_path / "refresh.json"
+
+    assert refresh_uspto_odp(selection, output, None, report_path, None, 330, 10, settings) == 0
+    report = json.loads(report_path.read_text())
+    assert report["status"] == "prepared"
+    assert report["data_freshness_status"] == "stale_review_required"
+    assert report["release_policy"]["release_freshness_status"] == "stale_review_required"
+    assert report["quality"]["freshness_status"] == "stale_review_required"
+    assert report["publication_status"] == "review_required"
+    assert report["ingestion_command"] is None
+    assert output.exists()
+
+
+def test_refresh_blocks_patent_data_past_hard_age_without_ingestion_hint(tmp_path: Path, monkeypatch):
+    from datetime import timedelta
+
+    patent_date = (datetime.now(timezone.utc).date() - timedelta(days=331)).isoformat()
+    payload = _zip_payload(patent_date)
+    settings = replace(
+        _settings(tmp_path), uspto_api_key="test-key", uspto_odp_min_size_bytes=1,
+        uspto_odp_max_size_bytes=100_000, uspto_odp_warn_release_age_days=150,
+        uspto_odp_max_release_age_days=240, uspto_odp_warn_patent_age_days=240,
+        uspto_odp_refresh_max_age_days=330,
+    )
+    settings, selection, detail = _approved_small_release(
+        tmp_path, payload, settings=settings, release_age_days=198,
+    )
+    monkeypatch.setattr("diligence_pipelines.cli.fetch_odp_product", lambda *args: detail)
+
+    def fake_download(url, destination, api_key=None, **kwargs):
+        destination.write_bytes(payload)
+        return BulkArtifact(str(destination), url, datetime.now(timezone.utc).isoformat(), hashlib.sha256(payload).hexdigest(), len(payload), 200)
+
+    monkeypatch.setattr("diligence_pipelines.cli.download_bulk_artifact", fake_download)
+    output = tmp_path / "g_patent.tsv.zip"
+    report_path = tmp_path / "refresh.json"
+
+    assert refresh_uspto_odp(selection, output, None, report_path, None, 330, 10, settings) == 2
+    report = json.loads(report_path.read_text())
+    assert report["status"] == "blocked"
+    assert report["data_freshness_status"] == "blocked"
+    assert report["publication_status"] == "blocked"
+    assert report["ingestion_command"] is None
+    assert not output.exists()
 
 
 def test_refresh_preserves_previous_artifact_on_size_mismatch(tmp_path: Path, monkeypatch):
@@ -289,3 +364,21 @@ def test_failed_approval_requires_audited_retry_with_new_dagster_run_key(tmp_pat
     assert resumed["status"] == "retry_requested"
     assert run_key_for_state(active, resumed) != first_key
     assert (tmp_path / "uspto/retries" / f"{retry['retry_id']}.json").exists()
+
+
+def test_refresh_policy_marks_old_but_allowed_release_for_review(tmp_path: Path):
+    from datetime import timedelta
+
+    settings = replace(_settings(tmp_path), uspto_odp_min_size_bytes=150_000_000,
+                       uspto_odp_max_size_bytes=350_000_000,
+                       uspto_odp_warn_release_age_days=150,
+                       uspto_odp_max_release_age_days=240,
+                       uspto_odp_warn_patent_age_days=240,
+                       uspto_odp_refresh_max_age_days=330)
+    candidate = {"size_bytes": 232_076_712,
+                 "file_release_at": (datetime.now(timezone.utc).date() - timedelta(days=198)).isoformat()}
+
+    assessment = validate_refresh_policy(candidate, settings, None)
+
+    assert assessment["release_age_days"] == 198
+    assert assessment["release_freshness_status"] == "stale_review_required"

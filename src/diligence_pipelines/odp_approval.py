@@ -179,14 +179,17 @@ def validate_approval(selection_path: Path, settings: Settings, storage) -> tupl
     return approval, candidate
 
 
-def validate_refresh_policy(candidate: dict, settings: Settings, max_age_days: int | None) -> None:
+def validate_refresh_policy(candidate: dict, settings: Settings, max_age_days: int | None) -> dict:
     limits = settings.uspto_odp_policy_limits
     if any(value is None for value in limits.values()):
         raise ValueError("Analyst-reviewed USPTO size and freshness limits are required before download")
     minimum = limits["min_size_bytes"]
     maximum = limits["max_size_bytes"]
     release_limit = limits["max_release_age_days"]
-    if minimum < 1 or maximum < minimum or release_limit < 0 or limits["max_patent_age_days"] < 0:
+    warn_release = limits["warn_release_age_days"]
+    warn_patent = limits["warn_patent_age_days"]
+    if (minimum < 1 or maximum < minimum or release_limit < 0 or limits["max_patent_age_days"] < 0
+            or not 0 <= warn_release < release_limit or not 0 <= warn_patent < limits["max_patent_age_days"]):
         raise ValueError("Invalid USPTO size or freshness policy")
     if max_age_days is not None and max_age_days != limits["max_patent_age_days"]:
         raise ValueError("CLI patent freshness override differs from approved policy")
@@ -199,3 +202,9 @@ def validate_refresh_policy(candidate: dict, settings: Settings, max_age_days: i
     age_days = (datetime.now(timezone.utc).date() - release_day).days
     if age_days < 0 or age_days > release_limit:
         raise ValueError("USPTO release date is outside approved freshness bounds")
+    return {
+        "release_age_days": age_days,
+        "release_warning_age_days": warn_release,
+        "release_max_age_days": release_limit,
+        "release_freshness_status": "stale_review_required" if age_days > warn_release else "current",
+    }

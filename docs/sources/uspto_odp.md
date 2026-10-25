@@ -58,11 +58,22 @@ PYTHONPATH=src python -m diligence_pipelines.cli review-uspto-odp \
   --output .data/uspto/reviewed_selection.json
 ```
 
-Before a live refresh, set analyst-reviewed values for
-`USPTO_ODP_MIN_SIZE_BYTES`, `USPTO_ODP_MAX_SIZE_BYTES`,
-`USPTO_ODP_MAX_RELEASE_AGE_DAYS`, and
-`USPTO_ODP_REFRESH_MAX_AGE_DAYS`. Empty values block the refresh before any
-provider request. A policy change requires a new discovery and approval.
+The initial reviewed policy for `PVGPATDIS/g_patent.tsv.zip` uses a
+150,000,000–350,000,000 byte download window, a 240-day maximum release age,
+and a 330-day maximum age for the newest patent date. It flags releases older
+than 150 days or patent data older than 240 days as
+`stale_review_required`. These provisional bounds are in the runtime templates
+and should be revisited after multiple releases. Empty hard bounds block the
+refresh before any provider request. A policy change requires a new discovery
+and approval.
+
+An allowed but stale file can be prepared as a historical baseline. Its report
+sets `data_freshness_status: stale_review_required` and
+`publication_status: review_required`; Dagster shows the same status. The
+report omits the suggested ingestion command until an analyst reviews the
+data's intended use. An unknown or future newest patent date, or either hard
+age limit being exceeded, blocks preparation. The generic ingestion command
+remains a separate manual operation and does not enforce this report status.
 Then prepare the reviewed release. This command rechecks product detail,
 validates the byte count, checksum when offered, ZIP member and record quality,
 and does not ingest into PostgreSQL:
@@ -78,6 +89,9 @@ PYTHONPATH=src python -m diligence_pipelines.cli refresh-uspto-odp \
 
 The refresh report includes checksum change status, schema and completeness
 checks, freshness information, and new/changed/removed patent ID examples.
+When USPTO supplies no checksum, the report records
+`provider_checksum_status: unavailable`; the computed SHA-256 still protects
+the local artifact and supports later comparisons.
 Only an explicit `ingest-uspto-bulk` command changes the PostgreSQL patent
 index.
 
