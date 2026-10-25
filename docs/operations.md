@@ -25,3 +25,12 @@ triggers the approved-refresh asset. Neither definition selects a release,
 approves it, ingests the patent index, or materializes the catalog. Those remain
 explicit analyst-controlled steps. Configure secrets and persistent artifact
 storage in the Dagster deployment environment rather than in tracked files.
+
+### Slack alert scaffold
+
+The runtime accepts `DILIGENCE_ALERT_SLACK_WEBHOOK_URL` through its deployment
+environment. It is intended for a Slack Incoming Webhook owned by the
+operations team. The repository currently only builds reviewable Slack payloads
+for `blocked` and `failed` USPTO refresh reports; it does not make webhook
+requests, attach alerts to Dagster runs, or retry notifications. Those delivery
+decisions remain an explicit follow-on change.
