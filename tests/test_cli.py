@@ -61,6 +61,42 @@ def test_odp_release_discovery_persists_snapshot(tmp_path: Path):
     assert (tmp_path / "indexes/uspto_patents/odp_discovery_history.jsonl").exists()
 
 
+def test_odp_live_shaped_fixture_discovers_exact_file_with_raw_lineage(tmp_path: Path):
+    import json
+
+    output = tmp_path / "odp-discovery.json"
+    settings = Settings(data_root=tmp_path)
+    assert discover_uspto_odp(None, output, Path("tests/fixtures/odp_search_products.json"), settings, Path("tests/fixtures/odp_product_PVGPATDIS.json")) == 0
+    report = json.loads(output.read_text())
+    assert report["status"] == "discovered"
+    assert report["candidate_count"] == 1
+    assert report["candidates"][0]["logical_artifact_id"] == "uspto_odp:PVGPATDIS:g_patent.tsv.zip"
+    assert Path(report["search_capture_path"]).exists()
+    assert Path(report["detail_capture_path"]).exists()
+    assert not (tmp_path / ".data").exists()
+
+
+def test_odp_missing_detail_blocks_discovery(tmp_path: Path):
+    import json
+
+    output = tmp_path / "odp-discovery.json"
+    assert discover_uspto_odp(None, output, Path("tests/fixtures/odp_search_products.json"), Settings(data_root=tmp_path)) == 2
+    report = json.loads(output.read_text())
+    assert report["status"] == "blocked"
+    assert report["candidate_count"] == 0
+
+
+def test_odp_default_discovery_path_resolves_once_under_data_root(tmp_path: Path):
+    import json
+
+    settings = Settings(data_root=tmp_path)
+    assert settings.uspto_odp_discovery_path == tmp_path / "uspto/odp_discovery.json"
+    assert discover_uspto_odp(None, None, Path("tests/fixtures/odp_search_products.json"), settings, Path("tests/fixtures/odp_product_PVGPATDIS.json")) == 0
+    report = json.loads(settings.uspto_odp_discovery_path.read_text())
+    assert report["candidate_count"] == 1
+    assert not (tmp_path / ".data").exists()
+
+
 def test_odp_refresh_prepares_release_without_ingesting(tmp_path: Path, monkeypatch):
     selection = tmp_path / "selection.json"
     selection.write_text('{"status": "approved_for_download", "download_url": "https://example.test/patents.jsonl", "reviewer": "analyst", "review_note": "approved"}\n')

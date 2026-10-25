@@ -28,7 +28,9 @@ USPTO_BULK_DATA_URL: ""
 # Current ODP catalog endpoint; use only with an ODP-compatible USPTO API key.
 USPTO_ODP_CATALOG_URL: "https://api.uspto.gov/api/v1/datasets/products/search"
 # Used by scheduled discovery; discovery does not download or ingest.
-USPTO_ODP_PRODUCT_QUERY: "PatentsView granted patent disambiguated"
+USPTO_ODP_PRODUCT_QUERY: "PatentsView"
+USPTO_ODP_PRODUCT_IDENTIFIER: "PVGPATDIS"
+USPTO_ODP_ARTIFACT_NAME: "g_patent.tsv.zip"
 USPTO_ODP_DISCOVERY_OUTPUT: ".data/uspto/odp_discovery.json"
 # Dagster's approved-refresh sensor reads this analyst-reviewed selection. The
 # selection must have status "approved_for_download"; no sensor approves a release.

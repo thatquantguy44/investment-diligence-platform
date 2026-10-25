@@ -38,8 +38,8 @@ def _metadata(report: dict) -> dict:
 def uspto_odp_discovery() -> dg.MaterializeResult:
     """Discover ODP artifacts on a schedule; no selection, download, or ingest occurs here."""
     settings = Settings.from_env()
-    output = settings.uspto_odp_discovery_output
-    exit_code = discover_uspto_odp(None, output, None, settings)
+    output = settings.uspto_odp_discovery_path
+    exit_code = discover_uspto_odp(None, None, None, settings)
     if exit_code:
         raise dg.Failure("USPTO ODP discovery did not complete")
     report = _read_json(output)

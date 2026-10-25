@@ -21,7 +21,7 @@ from diligence_pipelines.llm_events import LLMEventExtractor, OllamaClient
 from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report, load_event_query
 from diligence_pipelines.quality import validate_awards, validate_entities, validate_event_candidates, validate_financial_facts, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
-from diligence_pipelines.sources import RawCapture, SourceRequest, comtrade_response_metadata, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact
+from diligence_pipelines.sources import RawCapture, SourceRequest, comtrade_response_metadata, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_odp_product, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact, select_odp_candidate
 from diligence_pipelines.sources.sec import ANNUAL_FORMS, fetch_sec_companyfacts, load_sec_facts_fixture, normalize_financial_facts, sec_facts_metadata
 from diligence_pipelines.sources.gdelt import fetch_gdelt_articles, gdelt_response_metadata, load_gdelt_fixture, normalize_gdelt_articles
 from diligence_pipelines.sources.usaspending import award_search_metadata, fetch_award_search, fetch_award_transactions, load_usaspending_fixture, normalize_award_transactions, normalize_awards
@@ -71,8 +71,10 @@ def search_uspto_odp(query: str, output: Path | None, settings: Settings) -> int
     return 0
 
 
-def discover_uspto_odp(query: str | None, output: Path | None, fixture: Path | None, settings: Settings) -> int:
+def discover_uspto_odp(query: str | None, output: Path | None, fixture: Path | None, settings: Settings, product_fixture: Path | None = None) -> int:
     """Poll the ODP catalog and persist a release-candidate snapshot."""
+    if product_fixture is not None and fixture is None:
+        raise ValueError("--product-fixture requires --catalog-fixture")
     product_query = (query or settings.uspto_odp_product_query).strip()
     if fixture:
         payload = fixture.read_bytes()
@@ -83,25 +85,54 @@ def discover_uspto_odp(query: str | None, output: Path | None, fixture: Path | N
         payload = search_odp_products(product_query, settings.uspto_api_key, settings.uspto_odp_catalog_url)
         catalog_uri = settings.uspto_odp_catalog_url
     discovered_at = datetime.now(timezone.utc).isoformat()
+    storage = build_storage(settings)
     report = {
         "discovery_id": str(uuid.uuid4()),
+        "schema_version": "1.0.0",
         "status": "discovered",
         "discovered_at": discovered_at,
         "product_query": product_query,
         "catalog_uri": catalog_uri,
         "catalog_sha256": hashlib.sha256(payload).hexdigest(),
-        "candidates": discover_catalog_artifacts(payload, product_query),
+        "product_identifier": settings.uspto_odp_product_identifier,
+        "artifact_name": settings.uspto_odp_artifact_name,
+        "candidates": [],
     }
+    search_capture = RawCapture(SourceRequest("uspto_odp" if not fixture else "synthetic_fixture", catalog_uri, {"productTitle": product_query}), payload, status_code=200 if not fixture else None)
+    report["search_capture_sha256"] = search_capture.content_sha256
+    report["search_capture_path"] = storage.write_raw(search_capture)
+    try:
+        if fixture and not product_fixture and "bulkDataProductBag" not in json.loads(payload):
+            report["candidates"] = discover_catalog_artifacts(payload, product_query)
+            report["schema_version"] = "legacy_fixture"
+        else:
+            if fixture and not product_fixture:
+                raise ValueError("A product detail fixture is required with a USPTO-shaped search fixture")
+            detail_payload = product_fixture.read_bytes() if product_fixture else fetch_odp_product(settings.uspto_odp_product_identifier, settings.uspto_api_key or "")
+            detail_uri = str(product_fixture) if product_fixture else f"https://api.uspto.gov/api/v1/datasets/products/{settings.uspto_odp_product_identifier}"
+            detail_capture = RawCapture(SourceRequest("uspto_odp" if not fixture else "synthetic_fixture", detail_uri), detail_payload, status_code=200 if not product_fixture else None)
+            report["detail_capture_sha256"] = detail_capture.content_sha256
+            report["detail_capture_path"] = storage.write_raw(detail_capture)
+            candidate = select_odp_candidate(payload, detail_payload, settings.uspto_odp_product_identifier, settings.uspto_odp_artifact_name)
+            candidate.update({"discovery_id": report["discovery_id"], "discovered_at": discovered_at, "search_capture_sha256": search_capture.content_sha256, "detail_capture_sha256": detail_capture.content_sha256})
+            report["candidates"] = [candidate]
+            search_metadata = json.loads(payload)
+            report["pagination"] = search_metadata.get("_pagination", {"pages_fetched": 1})
+            report["completion_status"] = "complete"
+    except (ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        report["status"] = "blocked"
+        report["reasons"] = [str(exc)]
+        report["completion_status"] = "incomplete"
     report["candidate_count"] = len(report["candidates"])
-    destination = output or settings.uspto_odp_discovery_output
-    if not destination.is_absolute() and output is not None:
-        destination = settings.data_root / destination
+    if report["status"] == "discovered" and not report["candidates"]:
+        report["status"] = "blocked"
+        report["reasons"] = ["No USPTO ODP artifact matched the configured product and file policy"]
+    destination = output if output is not None else settings.uspto_odp_discovery_path
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n")
-    storage = build_storage(settings)
     storage.record_uspto_odp_discovery(report)
-    print(json.dumps({"status": "discovered", "output": str(destination), "candidate_count": report["candidate_count"], "catalog_sha256": report["catalog_sha256"]}, indent=2))
-    return 0
+    print(json.dumps({"status": report["status"], "output": str(destination), "candidate_count": report["candidate_count"], "catalog_sha256": report["catalog_sha256"], "reasons": report.get("reasons", [])}, indent=2))
+    return 0 if report["status"] == "discovered" else 2
 
 
 def select_uspto_odp(catalog: Path, contains: str, output: Path) -> int:
@@ -991,6 +1022,7 @@ def main() -> int:
     discover_parser.add_argument("--query", help="ODP product title query; defaults to USPTO_ODP_PRODUCT_QUERY")
     discover_parser.add_argument("--output", type=Path, help="Discovery snapshot path; defaults to USPTO_ODP_DISCOVERY_OUTPUT")
     discover_parser.add_argument("--catalog-fixture", type=Path, help="Offline catalog JSON for deterministic testing")
+    discover_parser.add_argument("--product-fixture", type=Path, help="Offline product detail JSON paired with --catalog-fixture")
     select_parser = subparsers.add_parser("select-uspto-odp")
     select_parser.add_argument("--catalog", type=Path, required=True, help="Catalog JSON returned by search-uspto-odp")
     select_parser.add_argument("--contains", required=True, help="Text that must identify exactly one catalog item/file")
@@ -1077,7 +1109,7 @@ def main() -> int:
     if args.command == "search-uspto-odp":
         return search_uspto_odp(args.query, args.output, Settings.from_env())
     if args.command == "discover-uspto-odp":
-        return discover_uspto_odp(args.query, args.output, args.catalog_fixture, Settings.from_env())
+        return discover_uspto_odp(args.query, args.output, args.catalog_fixture, Settings.from_env(), args.product_fixture)
     if args.command == "select-uspto-odp":
         return select_uspto_odp(args.catalog, args.contains, args.output)
     if args.command == "review-uspto-odp":

@@ -1,0 +1,16 @@
+{
+  "count": 2,
+  "bulkDataProductBag": [
+    {
+      "productIdentifier": "PVANNUAL",
+      "productTitleText": "PatentsView Annualized Patent Data",
+      "productFileTotalQuantity": 52
+    },
+    {
+      "productIdentifier": "PVGPATDIS",
+      "productTitleText": "PatentsView Granted Patent Disambiguated Data",
+      "productFrequencyText": "QUARTERLY",
+      "productFileTotalQuantity": 39
+    }
+  ]
+}

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import ssl
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import certifi
@@ -16,6 +17,9 @@ from diligence_pipelines.sources.base import open_url_with_retries
 
 
 DEFAULT_ODP_CATALOG_URL = "https://api.uspto.gov/api/v1/datasets/products/search"
+ODP_POLICY_VERSION = "uspto-odp-pvgpatdis-g-patent-v1"
+ODP_API_PREFIX = "/api/v1/datasets/products/"
+MAX_METADATA_BYTES = 2_000_000
 DOWNLOAD_KEYS = {"url", "downloadurl", "filedownloaduri", "downloaduri", "fileurl", "download_url", "file_download_uri"}
 
 
@@ -101,16 +105,94 @@ def _next_page(value: object) -> str | None:
             candidate = value.get(key)
             if isinstance(candidate, str) and candidate.startswith(("https://", "http://")):
                 return candidate
-        for child in value.values():
-            found = _next_page(child)
-            if found:
-                return found
-    elif isinstance(value, list):
-        for child in value:
-            found = _next_page(child)
-            if found:
-                return found
+        for key in ("pagination", "page", "links"):
+            child = value.get(key)
+            if isinstance(child, dict):
+                found = _next_page(child)
+                if found:
+                    return found
     return None
+
+
+def _official_odp_url(uri: str, path_prefix: str = ODP_API_PREFIX) -> bool:
+    parsed = urlparse(uri)
+    return parsed.scheme == "https" and parsed.netloc == "api.uspto.gov" and parsed.path.startswith(path_prefix) and not parsed.username and not parsed.password and not parsed.fragment
+
+
+def _read_metadata(response) -> bytes:
+    payload = response.read(MAX_METADATA_BYTES + 1)
+    if len(payload) > MAX_METADATA_BYTES:
+        raise ValueError("USPTO ODP metadata response exceeds the configured size limit")
+    return payload
+
+
+def _exact_record(records: object, key: str, expected: str, label: str) -> dict:
+    if not isinstance(records, list):
+        raise ValueError(f"Incomplete {label} records")
+    matches = [record for record in records if isinstance(record, dict) and record.get(key) == expected]
+    if len(matches) != 1:
+        raise ValueError(f"Expected exactly one {label} {expected}; found {len(matches)}")
+    return matches[0]
+
+
+def _complete_bag(data: object, bag_key: str, count_key: str = "count") -> list[dict]:
+    if not isinstance(data, dict) or not isinstance(data.get(bag_key), list):
+        raise ValueError(f"Incomplete {bag_key} response")
+    bag = data[bag_key]
+    count = data.get(count_key)
+    if not isinstance(count, int) or count < 0 or count != len(bag):
+        raise ValueError(f"Incomplete {bag_key} response: count does not match records")
+    return bag
+
+
+def select_odp_candidate(search_payload: bytes, detail_payload: bytes, product_identifier: str, artifact_name: str) -> dict:
+    """Select one exact USPTO product/file from complete provider metadata."""
+    search = json.loads(search_payload)
+    detail = json.loads(detail_payload)
+    search_product = _exact_record(_complete_bag(search, "bulkDataProductBag"), "productIdentifier", product_identifier, "product")
+    product = _exact_record(_complete_bag(detail, "bulkDataProductBag"), "productIdentifier", product_identifier, "product")
+    files = _complete_bag(product.get("productFileBag"), "fileDataBag")
+    file = _exact_record(files, "fileName", artifact_name, "artifact")
+    url = file.get("fileDownloadURI")
+    expected_path = f"{ODP_API_PREFIX}files/{product_identifier}/{artifact_name}"
+    if not isinstance(url, str) or not _official_odp_url(url, expected_path) or urlparse(url).path != expected_path or urlparse(url).query:
+        raise ValueError("Selected artifact has an invalid USPTO download URL")
+    size = file.get("fileSize")
+    if not isinstance(size, int) or size <= 0:
+        raise ValueError("Selected artifact has an invalid file size")
+    if file.get("fileTypeText") != "Data":
+        raise ValueError("Selected artifact is not a USPTO data file")
+    policy = {"source_id": "uspto_odp", "product_identifier": product_identifier, "artifact_name": artifact_name, "download_host": "api.uspto.gov", "file_type": "Data"}
+    policy_digest = hashlib.sha256(json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    material = {"policy": policy, "download_url": url, "size_bytes": size, "file_release_at": file.get("fileReleaseDate"), "file_modified_at": file.get("fileLastModifiedDateTime"), "provider_checksum": file.get("fileChecksum")}
+    fingerprint = hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {
+        "schema_version": "1.0.0", "source_id": "uspto_odp", "product_identifier": product_identifier,
+        "product_title": product.get("productTitleText") or search_product.get("productTitleText"),
+        "artifact_name": artifact_name, "logical_artifact_id": f"uspto_odp:{product_identifier}:{artifact_name}",
+        "candidate_fingerprint": f"sha256:{fingerprint}", "policy_version": ODP_POLICY_VERSION,
+        "approval_policy_digest": f"sha256:{policy_digest}", "download_url": url,
+        "file_size": size, "size_bytes": size, "file_release_at": file.get("fileReleaseDate"),
+        "file_modified_at": file.get("fileLastModifiedDateTime"), "provider_checksum": file.get("fileChecksum"),
+        "provider_checksum_status": "provided" if file.get("fileChecksum") else "unavailable",
+        "policy_status": "review_required", "policy_reasons": [], "source": file,
+    }
+
+
+def fetch_odp_product(product_identifier: str, api_key: str) -> bytes:
+    if not re.fullmatch(r"[A-Z0-9]+", product_identifier):
+        raise ValueError("Invalid USPTO ODP product identifier")
+    if not api_key:
+        raise ValueError("USPTO_API_KEY is required for ODP product detail")
+    uri = f"https://api.uspto.gov{ODP_API_PREFIX}{product_identifier}"
+    request = Request(uri, headers={"X-Api-Key": api_key, "Accept": "application/json", "User-Agent": "investment-diligence-pipelines/0.1"})
+    try:
+        with open_url_with_retries(request, timeout=60, context=ssl.create_default_context(cafile=certifi.where())) as response:
+            return _read_metadata(response)
+    except HTTPError as exc:
+        raise RuntimeError(f"USPTO ODP product detail returned HTTP {exc.code}: {uri}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Unable to reach USPTO ODP product detail {uri}: {exc.reason}") from exc
 
 
 def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CATALOG_URL, max_pages: int = 20) -> bytes:
@@ -120,14 +202,20 @@ def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CAT
         raise ValueError("USPTO_API_KEY is required for ODP catalog access")
     if max_pages < 1:
         raise ValueError("max_pages must be at least 1")
+    if not _official_odp_url(api_url, "/api/v1/datasets/products/search") or urlparse(api_url).path != "/api/v1/datasets/products/search" or urlparse(api_url).query:
+        raise ValueError("USPTO ODP catalog URL must use the official API host")
     uri = f"{api_url}?{urlencode({'productTitle': query})}"
     context = ssl.create_default_context(cafile=certifi.where())
     pages: list[object] = []
+    visited: set[str] = set()
     for _ in range(max_pages):
+        if uri in visited or not _official_odp_url(uri, "/api/v1/datasets/products/search") or urlparse(uri).path != "/api/v1/datasets/products/search":
+            raise ValueError("Invalid or repeated USPTO ODP pagination URL")
+        visited.add(uri)
         request = Request(uri, headers={"X-Api-Key": api_key, "Accept": "application/json", "User-Agent": "investment-diligence-pipelines/0.1"})
         try:
             with open_url_with_retries(request, timeout=60, context=context) as response:
-                payload = response.read()
+                payload = _read_metadata(response)
         except HTTPError as exc:
             raise RuntimeError(f"USPTO ODP catalog returned HTTP {exc.code}: {uri}") from exc
         except URLError as exc:
@@ -137,11 +225,13 @@ def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CAT
         uri = _next_page(page)
         if not uri:
             break
+    else:
+        raise ValueError("Incomplete USPTO ODP search: page limit reached")
     if len(pages) == 1:
         return json.dumps(pages[0], separators=(",", ":")).encode()
     if all(isinstance(page, dict) for page in pages):
         merged = dict(pages[0])
-        for key in ("products", "data", "results", "items"):
+        for key in ("bulkDataProductBag", "products", "data", "results", "items"):
             values = [page.get(key) for page in pages if isinstance(page.get(key), list)]
             if values:
                 merged[key] = [item for group in values for item in group]

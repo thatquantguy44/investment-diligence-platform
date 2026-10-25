@@ -20,15 +20,22 @@ The local PostgreSQL patent index does not require a key after the bulk artifact
 
 ## Recommended setup path
 
-Search the ODP catalog:
+Run metadata-only discovery for the configured product and exact file:
 
 ```bash
-PYTHONPATH=src python -m diligence_pipelines.cli search-uspto-odp \
-  --query "granted patent disambiguated" \
-  --output .data/uspto/catalog.json
+PYTHONPATH=src python -m diligence_pipelines.cli discover-uspto-odp \
+  --output .data/uspto/odp_discovery.json
 ```
 
-Select one artifact:
+Inspect the candidate and its two raw metadata captures in the discovery
+report. Discovery requires one `PVGPATDIS` product and one exact
+`g_patent.tsv.zip` file. A missing or ambiguous match is reported as blocked.
+The Spec 0004 approval binding and pre-download checks are still pending;
+the current review and refresh commands below describe the existing legacy
+workflow and should not be used for this new candidate until those gates are
+implemented.
+
+The legacy catalog selection command remains available for fixture replay:
 
 ```bash
 PYTHONPATH=src python -m diligence_pipelines.cli select-uspto-odp \
@@ -134,9 +141,11 @@ The repository includes a scheduler-ready discovery wrapper:
 ./scripts/uspto_odp_discovery.sh
 ```
 
-It polls the configured ODP catalog, records every matching downloadable
-artifact, and does **not** select, download, or ingest a release. The default
-query is `USPTO_ODP_PRODUCT_QUERY`; the latest snapshot is written to
+It searches the configured ODP catalog, fetches the exact `PVGPATDIS` product
+detail, and records the `g_patent.tsv.zip` candidate with both raw metadata
+captures. It does **not** download or ingest a release. The default query is
+`PatentsView`; the product and file policy are configured with
+`USPTO_ODP_PRODUCT_IDENTIFIER` and `USPTO_ODP_ARTIFACT_NAME`. The latest snapshot is written to
 `USPTO_ODP_DISCOVERY_OUTPUT`, with append-only history under
 `.data/indexes/uspto_patents/odp_discovery_history.jsonl`. PostgreSQL also
 stores each snapshot in `diligence.uspto_odp_discoveries`.
@@ -145,7 +154,8 @@ Run an offline smoke test:
 
 ```bash
 DILIGENCE_STORAGE_BACKEND=local PYTHONPATH=src python -m diligence_pipelines.cli discover-uspto-odp \
-  --catalog-fixture tests/fixtures/odp_catalog.json \
+  --catalog-fixture tests/fixtures/odp_search_products.json \
+  --product-fixture tests/fixtures/odp_product_PVGPATDIS.json \
   --output .data/uspto/odp_discovery.json
 ```
 

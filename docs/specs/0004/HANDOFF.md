@@ -3,22 +3,20 @@
 ## Current state
 
 The [specification](0004-controlled-bulk-source-discovery.md) is a draft for
-review. No implementation or live release approval is implied. Existing ODP
-discovery, analyst review, refresh preparation, and Dagster definitions remain
-as described in the [source runbook](../../sources/uspto_odp.md).
+review. Metadata discovery has been implemented; no live release approval is
+implied. The existing analyst review, refresh preparation, and Dagster
+definitions remain as described in the [source runbook](../../sources/uspto_odp.md).
 
-The 2026-10-25 live catalog search authenticated successfully. The configured
-title returned no candidate, while a broader product search found the stable
-`PVGPATDIS` identifier. The search response did not include file URLs. A prior
-local product-detail capture contains `g_patent.tsv.zip`. The current discovery
-code therefore needs product detail resolution, realistic response fixtures,
-and a path fix before it can support a reliable manual acceptance test.
+On 2026-10-25 the official search and product detail endpoints were verified
+live. Two-step metadata-only discovery now resolves one exact `PVGPATDIS` /
+`g_patent.tsv.zip` candidate, preserves both raw captures, and writes the
+configured path once. The latest local evidence is
+`.data/uspto/odp_discovery.json`. No patent ZIP was downloaded.
 
 ## Next handoff
 
-Review the product and artifact policy, immutable approval contract, download
-validation, and quarterly freshness thresholds in the spec. Then implement
-the ordered work in [ROADMAP.md](ROADMAP.md), run a fresh metadata-only
-discovery, present the exact candidate to the analyst, and record explicit
-approval before a manual Dagster refresh. Keep the six-hour schedule disabled
-until that acceptance test passes.
+Implement immutable approval binding and download validation in
+[ROADMAP.md](ROADMAP.md). Review quarterly freshness thresholds, then present
+the exact candidate to the analyst and record explicit approval before a
+manual Dagster refresh. Keep the six-hour schedule disabled until that
+acceptance test passes.

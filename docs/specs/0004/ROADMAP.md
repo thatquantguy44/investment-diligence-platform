@@ -1,6 +1,10 @@
 # Spec 0004 Roadmap
 
-**Status:** Proposed sequence; implementation awaits review of the
+**Status:** Implementation in progress. The USPTO search and product-detail
+endpoint have been verified live; realistic metadata fixtures, exact
+`PVGPATDIS` / `g_patent.tsv.zip` selection, capture lineage, and a successful
+metadata-only live discovery are in place. Approval binding and download
+guards remain pending. See the
 [specification](0004-controlled-bulk-source-discovery.md).
 
 1. Confirm the current USPTO product-detail endpoint and sanitize realistic
