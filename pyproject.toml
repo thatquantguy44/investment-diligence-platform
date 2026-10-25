@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0,<9"]
 postgres = ["psycopg[binary]>=3.2,<4"]
+dagster = ["dagster>=1.10,<2", "dagster-webserver>=1.10,<2"]
 
 [project.scripts]
 diligence-pipelines = "diligence_pipelines.cli:main"

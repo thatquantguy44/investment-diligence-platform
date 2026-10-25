@@ -6,10 +6,11 @@ See the [UN Comtrade source runbook](../sources/un_comtrade.md) for credentials,
 
 ## Approval worksheet: reporter countries and HS baskets
 
-**Status:** Candidate options only — no country or sector is approved yet.
+**Status:** Initial scope selected; live validation and final reviewer sign-off
+remain pending.
 
-Pipeline 03 must begin with one approved reporter country and one approved
-sector basket. Record the decision here before using a broader live query.
+Pipeline 03 begins with one selected reporter country and one selected sector
+basket. Record the decision here before using a broader live query.
 Reporter codes are UN Comtrade codes, not ISO country codes. HS baskets must
 also record the classification version because classifications and converted
 historical series can differ by source and period.
@@ -18,7 +19,7 @@ historical series can differ by source and period.
 
 | Country | UN Comtrade reporter code | Candidate rationale | Approval status |
 | --- | ---: | --- | --- |
-| USA | `842` | Already live-tested in this repository | Candidate |
+| USA | `842` | Already live-tested in this repository | **Selected for validation** |
 | China | `156` | Large manufacturing and export base | Candidate |
 | Germany | `276` | Industrial and automotive exposure | Candidate |
 | Japan | `392` | Advanced manufacturing and electronics | Candidate |
@@ -38,7 +39,7 @@ and keep the first live run narrow.
 | --- | --- | --- | --- |
 | Lithium-ion batteries | `850760` | To be confirmed before approval | Candidate |
 | EV supply chain | `850760`, `870380` | To be confirmed before approval | Candidate |
-| Semiconductors | `8541`, `8542` | To be confirmed before approval | Candidate |
+| Semiconductors and microelectronics | `8541`, `8542` | Initial selected basket; confirm returned HS vintage during live validation | **Selected for validation** |
 | Telecom equipment | `8517` | To be confirmed before approval | Candidate |
 | Medical devices | `9018` | To be confirmed before approval | Candidate |
 | Aerospace | `8802`, `8803` | To be confirmed before approval | Candidate |
@@ -47,11 +48,11 @@ and keep the first live run narrow.
 
 ### Decision record
 
-- Approved country:
-- Approved reporter code:
-- Approved sector:
-- Approved HS codes:
-- HS classification version:
+- Selected country: United States
+- Selected reporter code: `842`
+- Selected sector: Semiconductors and microelectronics
+- Selected HS codes: `8541`, `8542`
+- HS classification version: Confirm from the live UN Comtrade response before final sign-off
 - Period or date range:
 - Partner scope, default `0` / World:
 - Flow scope, default imports and exports:
@@ -59,8 +60,9 @@ and keep the first live run narrow.
 - Review date:
 - Coverage and access notes:
 
-No candidate becomes an active Pipeline 03 configuration until this decision
-record is completed and reviewed.
+The selected scope is the active non-publishing validation configuration. It
+does not become a publishing production scope until the remaining decision
+record, live coverage check, and reviewer sign-off are completed.
 
 ## Offline fixture replay
 

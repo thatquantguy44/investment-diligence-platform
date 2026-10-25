@@ -65,6 +65,22 @@ checks, freshness information, and new/changed/removed patent ID examples.
 Only an explicit `ingest-uspto-bulk` command changes the PostgreSQL patent
 index.
 
+Use the scheduler-friendly wrapper for the same reviewed-only operation:
+
+```bash
+./scripts/uspto_odp_refresh.sh \
+  --selection .data/uspto/reviewed_selection.json \
+  --output .data/uspto/g_patent.tsv.zip \
+  --report-output .data/uspto/refresh_report.json \
+  --max-age-days 45
+```
+
+Every prepared, blocked, or failed refresh writes a durable report. Local runs
+append to `.data/indexes/uspto_patents/odp_refresh_history.jsonl`; PostgreSQL
+runs append to `diligence.uspto_odp_refreshes`. The wrapper exits nonzero for
+blocked quality or download failures so an approved scheduler can route alerts.
+It never invokes ingestion or promotion automatically.
+
 The PostgreSQL model keeps two separate patent products:
 
 - `diligence.patent_index` is the searchable USPTO bulk-release index.
@@ -82,6 +98,12 @@ PYTHONPATH=src python -m diligence_pipelines.cli materialize-patent-catalog
 
 This command upserts from the current `patent_index`; it does not delete or
 rewrite run-scoped `patent_records`.
+
+Each PostgreSQL materialization records its UUID, source-file hashes, index and
+catalog counts, parity-mismatch count, duration, and terminal status in
+`diligence.patent_catalog_materializations`. A nonzero mismatch count returns a
+nonzero CLI status and should be investigated before treating the catalog as
+ready for downstream use.
 
 Download the selected official artifact, then ingest a bounded pilot:
 

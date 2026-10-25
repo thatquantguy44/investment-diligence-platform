@@ -129,6 +129,8 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
     if not isinstance(url, str):
         raise SystemExit("ODP selection is missing download_url")
     output.parent.mkdir(parents=True, exist_ok=True)
+    report_path = report_output or Path(str(output) + ".refresh.json")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     temp_handle = tempfile.NamedTemporaryFile(prefix=".odp-download-", suffix=output.suffix, dir=output.parent, delete=False)
     temp_path = Path(temp_handle.name)
     temp_handle.close()
@@ -151,6 +153,7 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
         previous_quality = profile_bulk_release(previous, max_age_days=max_age_days) if previous and previous.exists() and changed else None
         diff = compare_bulk_releases(previous, output, max_examples=max_examples) if previous and previous.exists() and changed else None
         report = {
+            "refresh_id": str(uuid.uuid4()),
             "status": "prepared" if quality["status"] == "pass" else "blocked",
             "prepared_at": datetime.now(timezone.utc).isoformat(),
             "selection": approval,
@@ -161,14 +164,34 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
             "ingestion_status": "not_started",
             "ingestion_command": f"PYTHONPATH=src python -m diligence_pipelines.cli ingest-uspto-bulk --patent-file {output}",
         }
-        report_path = report_output or Path(str(output) + ".refresh.json")
-        report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
         if quality_output:
             quality_output.parent.mkdir(parents=True, exist_ok=True)
             quality_output.write_text(json.dumps(quality, indent=2) + "\n")
+        storage = build_storage(settings)
+        storage.record_uspto_odp_refresh(report)
         print(json.dumps({"status": report["status"], "output": str(output), "changed": changed, "report": str(report_path), "ingestion_status": "not_started"}, indent=2))
         return 0 if report["status"] == "prepared" else 2
+    except Exception as exc:
+        report = {
+            "refresh_id": str(uuid.uuid4()),
+            "status": "failed",
+            "prepared_at": datetime.now(timezone.utc).isoformat(),
+            "selection": approval,
+            "output": str(output),
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "ingestion_status": "not_started",
+        }
+        report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        try:
+            storage = build_storage(settings)
+            storage.record_uspto_odp_refresh(report)
+        except Exception as storage_exc:
+            report["history_record_error"] = str(storage_exc)
+            report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        print(json.dumps({"status": "failed", "report": str(report_path), "ingestion_status": "not_started", "error": str(exc)}, indent=2))
+        return 2
     finally:
         temp_path.unlink(missing_ok=True)
         Path(str(temp_path) + ".json").unlink(missing_ok=True)
@@ -194,9 +217,9 @@ def materialize_patent_catalog(settings: Settings) -> int:
     storage = build_storage(settings)
     if not hasattr(storage, "materialize_patent_catalog"):
         raise SystemExit("Selected storage backend does not support patent catalog materialization")
-    count = storage.materialize_patent_catalog()
-    print(json.dumps({"status": "materialized", "patent_catalog_rows": count}, indent=2))
-    return 0
+    result = storage.materialize_patent_catalog()
+    print(json.dumps(result, indent=2))
+    return 0 if result["status"] == "completed" else 2
 
 
 def enrich_uspto_index(patent_file: Path, abstract_file: Path | None, assignee_file: Path | None, limit: int | None, settings: Settings) -> int:
