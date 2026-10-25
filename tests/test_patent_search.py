@@ -20,3 +20,17 @@ def test_local_patent_catalog_is_deduplicated(tmp_path):
     assert len(rows) == 1
     assert rows[0]["record"]["title"] == "Updated solid state battery"
     assert rows[0]["source_file_sha256"] == "release-b"
+
+
+def test_local_patent_catalog_materialization_reports_parity(tmp_path):
+    storage = LocalStorage(tmp_path)
+    storage.upsert_patent_index([
+        {"patent_id": "1", "title": "Solid state battery"},
+        {"patent_id": "2", "title": "Optical sensor"},
+    ], {"source_file_sha256": "release-a", "source_path": "fixture"})
+    result = storage.materialize_patent_catalog()
+    assert result["status"] == "completed"
+    assert result["patent_index_rows"] == 2
+    assert result["patent_catalog_rows"] == 2
+    assert result["parity_mismatch_count"] == 0
+    assert result["source_file_sha256s"] == ["release-a"]

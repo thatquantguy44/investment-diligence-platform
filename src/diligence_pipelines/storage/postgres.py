@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from diligence_pipelines.sources.base import RawCapture
+from diligence_pipelines.storage.migrations import apply_postgres_migrations
 
 
 # Fixed allowlists: table names are interpolated into SQL, so they must never come from input.
@@ -236,6 +239,7 @@ class PostgresStorage:
                 )
             """)
         connection.commit()
+        apply_postgres_migrations(connection)
 
     def write_raw(self, capture: RawCapture) -> str:
         connection = self._connect()
@@ -344,9 +348,11 @@ class PostgresStorage:
         connection.commit()
         return len(records)
 
-    def materialize_patent_catalog(self) -> int:
-        """Backfill the canonical table from the already-loaded patent index."""
+    def materialize_patent_catalog(self) -> dict[str, Any]:
+        """Backfill the canonical table and record source/count parity for the run."""
         connection = self._connect()
+        materialization_id = str(uuid.uuid4())
+        started_at = datetime.now(timezone.utc)
         with connection.cursor() as cursor:
             cursor.execute("""
                 INSERT INTO diligence.patent_catalog
@@ -359,9 +365,45 @@ class PostgresStorage:
                     last_seen_at = now(),
                     updated_at = now()
             """)
-            materialized = cursor.rowcount
+            upserted = cursor.rowcount
+            cursor.execute("SELECT count(*) FROM diligence.patent_index")
+            index_row_count = cursor.fetchone()[0]
+            cursor.execute("SELECT count(*) FROM diligence.patent_catalog")
+            catalog_row_count = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT count(*)
+                FROM diligence.patent_index AS index_record
+                FULL OUTER JOIN diligence.patent_catalog AS catalog_record USING (patent_id)
+                WHERE index_record.patent_id IS NULL
+                   OR catalog_record.patent_id IS NULL
+                   OR index_record.source_file_sha256 <> catalog_record.source_file_sha256
+            """)
+            parity_mismatch_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COALESCE(jsonb_agg(DISTINCT source_file_sha256), '[]'::jsonb) FROM diligence.patent_index")
+            source_file_sha256s = cursor.fetchone()[0]
+            completed_at = datetime.now(timezone.utc)
+            status = "completed" if parity_mismatch_count == 0 else "completed_with_mismatch"
+            cursor.execute("""
+                INSERT INTO diligence.patent_catalog_materializations
+                    (materialization_id, started_at, completed_at, status, index_row_count,
+                     catalog_row_count, parity_mismatch_count, upserted_row_count, source_file_sha256s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                materialization_id, started_at, completed_at, status, index_row_count,
+                catalog_row_count, parity_mismatch_count, upserted, json.dumps(source_file_sha256s),
+            ))
         connection.commit()
-        return materialized
+        return {
+            "status": status,
+            "materialization_id": materialization_id,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "patent_index_rows": index_row_count,
+            "patent_catalog_rows": catalog_row_count,
+            "parity_mismatch_count": parity_mismatch_count,
+            "upserted_row_count": upserted,
+            "source_file_sha256s": source_file_sha256s,
+        }
 
     def record_uspto_odp_discovery(self, report: dict) -> str:
         connection = self._connect()
@@ -380,6 +422,19 @@ class PostgresStorage:
             ))
         connection.commit()
         return f"postgresql://diligence/uspto_odp_discoveries/{report['discovery_id']}"
+
+    def record_uspto_odp_refresh(self, report: dict) -> str:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO diligence.uspto_odp_refreshes (refresh_id, status, report, refreshed_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (refresh_id) DO NOTHING
+            """, (
+                report["refresh_id"], report["status"], json.dumps(report, default=str), report["prepared_at"],
+            ))
+        connection.commit()
+        return f"postgresql://diligence/uspto_odp_refreshes/{report['refresh_id']}"
 
     def stage_patent_enrichment(self, rows: list[dict[str, Any]], source_file_sha256: str) -> int:
         connection = self._connect()

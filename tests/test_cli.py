@@ -79,7 +79,27 @@ def test_odp_refresh_prepares_release_without_ingesting(tmp_path: Path, monkeypa
     report = __import__("json").loads(report_path.read_text())
     assert report["ingestion_status"] == "not_started"
     assert report["quality"]["status"] == "pass"
+    assert report["refresh_id"]
+    assert (tmp_path / "indexes/uspto_patents/odp_refresh_history.jsonl").exists()
     assert output.exists()
+
+
+def test_odp_refresh_records_download_failure_without_ingesting(tmp_path: Path, monkeypatch):
+    selection = tmp_path / "selection.json"
+    selection.write_text('{"status": "approved_for_download", "download_url": "https://example.test/patents.jsonl", "reviewer": "analyst", "review_note": "approved"}\n')
+    report_path = tmp_path / "refresh.json"
+
+    def failed_download(*args, **kwargs):
+        raise RuntimeError("source unavailable")
+
+    monkeypatch.setattr("diligence_pipelines.cli.download_bulk_artifact", failed_download)
+    assert refresh_uspto_odp(selection, tmp_path / "patents.jsonl", None, report_path, None, None, 10, Settings(data_root=tmp_path)) == 2
+    report = __import__("json").loads(report_path.read_text())
+    assert report["status"] == "failed"
+    assert report["ingestion_status"] == "not_started"
+    assert report["error"] == "source unavailable"
+    history = tmp_path / "indexes/uspto_patents/odp_refresh_history.jsonl"
+    assert __import__("json").loads(history.read_text().splitlines()[-1])["status"] == "failed"
 
 
 def test_pipeline_04_award_fixture_publishes_all_outputs(tmp_path: Path):

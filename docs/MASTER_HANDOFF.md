@@ -121,12 +121,14 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 
 ## Recommended next work
 
-1. Confirm the full USPTO bulk ingestion has finished, then run
-   `materialize-patent-catalog` against the completed `patent_index`.
-2. Validate the deduplicated catalog count against the full index and confirm
-   repeated Pipeline 02 runs do not increase canonical patent counts.
-3. For Pipeline 03, approve one reporter country and one HS basket in the
-   approval worksheet before broader live collection.
+1. Operationalize the completed USPTO index and catalog: schedule approved
+   refreshes and add stale-source and failed-refresh alerts.
+2. Use the PostgreSQL migration registry for all future schema changes; the
+   patent-catalog materialization audit table is the initial applied migration.
+3. For Pipeline 03, validate the selected USA (`842`) semiconductors and
+   microelectronics basket (`8541`, `8542`) against the live API, record the
+   returned HS vintage and coverage, then obtain reviewer sign-off before
+   publishing a live product.
 4. Load and validate Comtrade primary/secondary keys without exposing them;
    preview access currently works anonymously.
 5. Add migrations before the PostgreSQL schema is used outside local development.
