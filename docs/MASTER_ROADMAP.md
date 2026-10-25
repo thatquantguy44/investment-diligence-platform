@@ -24,6 +24,7 @@ spec; this file records sequencing and dependencies across the repository.
 | Spec 0002 procurement signals | Planned | One country and one sector must be selected before implementation |
 | Spec 0002 career-page signals | Planned | Source permission and company allowlist must be defined before collection |
 | Spec 0003 WIFO/CNIPA signals | Placeholder | Candidate sources only; scope, access, and use case not yet defined |
+| Spec 0004 controlled bulk discovery | Draft for review | USPTO product and artifact identity, source evidence, analyst approval, and guarded refresh contract |
 
 ## Ordered roadmap
 
@@ -104,3 +105,4 @@ record alone.
 - [Spec 0001 roadmap](specs/0001/ROADMAP.md)
 - [Spec 0002 roadmap](specs/0002/ROADMAP.md)
 - [Spec 0003 roadmap](specs/0003/ROADMAP.md)
+- [Spec 0004 roadmap](specs/0004/ROADMAP.md)
