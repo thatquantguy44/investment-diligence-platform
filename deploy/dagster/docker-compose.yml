@@ -4,6 +4,9 @@ x-dagster-service: &dagster-service
   build:
     context: ../..
     dockerfile: deploy/dagster/Dockerfile
+  env_file:
+    - path: .env
+      required: false
   environment:
     DAGSTER_HOME: /var/lib/dagster
     DILIGENCE_DATA_ROOT: /var/lib/diligence

@@ -9,8 +9,19 @@ volumes:
 
 The runtime is configured to use the repository's PostgreSQL-backed storage
 adapter for pipeline data. Database credentials and the USPTO API key are
-injected at runtime in the next deployment step; they are never copied into the
-image or committed to Git.
+injected at runtime; they are never copied into the image or committed to Git.
+
+For a local Docker deployment, copy the template and populate it from a secret
+manager or other approved runtime source:
+
+```bash
+cp deploy/dagster/.env.example deploy/dagster/.env
+chmod 600 deploy/dagster/.env
+```
+
+`deploy/dagster/.env` is ignored by Git. In a managed deployment, inject the
+same variables through the platform's secret store instead of creating that
+file.
 
 Build and start the runtime after completing runtime-secret configuration:
 
