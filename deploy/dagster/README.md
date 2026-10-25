@@ -5,7 +5,8 @@ volumes:
 
 - `investment_diligence_dagster_home` for Dagster metadata and run state;
 - `investment_diligence_uspto_artifacts` for reviewed selections, downloaded
-  USPTO releases, and refresh reports.
+  USPTO releases, immutable approval and discovery records, retry audits, and
+  refresh reports.
 
 The runtime is configured to use the repository's PostgreSQL-backed storage
 adapter for pipeline data. Database credentials and the USPTO API key are
@@ -31,3 +32,8 @@ docker compose -f deploy/dagster/docker-compose.yml up --build -d
 
 The Dagster UI will be available at `http://localhost:3000`. Starting the
 runtime does not enable any schedule or trigger a source request.
+
+Set the configured analyst name, OS user, and all four reviewed size/freshness
+bounds in the runtime environment before attempting an approved refresh.
+Blank bounds block downloads. The six-hour discovery schedule remains stopped
+until a manual approved refresh passes its acceptance checks.

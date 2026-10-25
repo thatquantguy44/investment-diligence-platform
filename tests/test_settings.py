@@ -26,3 +26,9 @@ def test_comtrade_primary_and_secondary_keys_are_ordered_without_exposing_values
 def test_slack_webhook_configuration_is_optional_and_environment_scoped(monkeypatch):
     monkeypatch.setenv("DILIGENCE_ALERT_SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/example")
     assert Settings.from_env().alert_slack_webhook_url == "https://hooks.slack.com/services/example"
+
+
+def test_uspto_review_and_refresh_paths_resolve_once_under_data_root(tmp_path: Path):
+    settings = Settings(data_root=tmp_path)
+    assert settings.uspto_odp_reviewed_selection_path == tmp_path / "uspto/reviewed_selection.json"
+    assert settings.uspto_odp_refresh_path == tmp_path / "uspto/g_patent.tsv.zip"

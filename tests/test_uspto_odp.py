@@ -36,6 +36,20 @@ def test_download_bulk_artifact_writes_checksum_sidecar(monkeypatch, tmp_path):
     assert sidecar["size_bytes"] == 8
 
 
+def test_authenticated_download_rejects_off_host_before_network(tmp_path, monkeypatch):
+    monkeypatch.setattr(uspto_odp, "_official_open", lambda *args, **kwargs: pytest.fail("network attempted"))
+    with pytest.raises(ValueError, match="official file host"):
+        uspto_odp.download_bulk_artifact("https://example.test/g_patent.tsv.zip", tmp_path / "file.zip", api_key="test-key")
+
+
+def test_download_rejects_excess_bytes_and_removes_partial_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(uspto_odp, "urlopen", lambda *args, **kwargs: _Response())
+    output = tmp_path / "file.zip"
+    with pytest.raises(RuntimeError, match="byte count"):
+        uspto_odp.download_bulk_artifact("https://example.test/file.zip", output, expected_size=7, max_bytes=7)
+    assert not output.exists()
+
+
 def test_select_catalog_artifact_requires_one_matching_file():
     payload = Path("tests/fixtures/odp_catalog.json").read_bytes()
     selection = uspto_odp.select_catalog_artifact(payload, "2025-Q4")
@@ -100,7 +114,7 @@ def test_search_odp_products_retries_rate_limit(monkeypatch):
             raise HTTPError(request.full_url, 429, "rate limited", {}, None)
         return Response()
 
-    monkeypatch.setattr("diligence_pipelines.sources.base.urlopen", fake_urlopen)
+    monkeypatch.setattr(uspto_odp, "_official_open", fake_urlopen)
     monkeypatch.setattr("diligence_pipelines.sources.base.time.sleep", lambda seconds: None)
     assert json.loads(uspto_odp.search_odp_products("patents", "key"))["products"] == []
     assert calls["count"] == 2

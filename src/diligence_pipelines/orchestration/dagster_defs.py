@@ -6,14 +6,16 @@ Install with ``pip install -e '.[dagster,postgres]'`` and run locally with:
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 import dagster as dg
 
 from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp
+from diligence_pipelines.odp_approval import validate_approval
+from diligence_pipelines.odp_execution import load_execution_state, record_scheduled, run_key_for_state
 from diligence_pipelines.settings import Settings
+from diligence_pipelines.storage import build_storage
 
 
 def _read_json(path: Path) -> dict:
@@ -55,8 +57,8 @@ def uspto_odp_discovery() -> dg.MaterializeResult:
 def uspto_odp_approved_refresh() -> dg.MaterializeResult:
     """Prepare one already-reviewed release and fail visibly on download or quality issues."""
     settings = Settings.from_env()
-    selection = settings.uspto_odp_reviewed_selection
-    output = settings.uspto_odp_refresh_output
+    selection = settings.uspto_odp_reviewed_selection_path
+    output = settings.uspto_odp_refresh_path
     report_path = Path(str(output) + ".refresh.json")
     exit_code = refresh_uspto_odp(
         selection, output, settings.uspto_odp_previous_file, report_path, None,
@@ -88,20 +90,26 @@ def approved_uspto_selection_sensor(context):
     the patent catalog.
     """
     settings = Settings.from_env()
-    selection = settings.uspto_odp_reviewed_selection
+    selection = settings.uspto_odp_reviewed_selection_path
     if not selection.exists():
         return dg.SkipReason(f"Waiting for approved selection: {selection}")
-    raw = selection.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
-    if context.cursor == digest:
-        return dg.SkipReason("Approved selection was already triggered")
-    approval = json.loads(raw)
-    if approval.get("status") != "approved_for_download":
-        return dg.SkipReason("Selection is not analyst-approved for download")
-    context.update_cursor(digest)
-    return dg.RunRequest(run_key=digest, tags={
+    try:
+        approval, _ = validate_approval(selection, settings, build_storage(settings))
+        state = load_execution_state(settings, approval)
+    except (ValueError, KeyError, FileNotFoundError, PermissionError) as exc:
+        return dg.SkipReason(f"USPTO selection is not valid for a Dagster run: {exc}")
+    run_key = run_key_for_state(approval, state)
+    if run_key is None:
+        return dg.SkipReason(f"USPTO approval is {state['status']}; an explicit retry is required after a failed run")
+    if context.cursor == run_key:
+        return dg.SkipReason("This approval attempt was already requested")
+    record_scheduled(settings, approval)
+    context.update_cursor(run_key)
+    return dg.RunRequest(run_key=run_key, tags={
         "source": "uspto_odp",
         "approval_reviewer": str(approval.get("reviewer") or "unknown"),
+        "approval_id": approval["approval_id"],
+        "attempt": str(state["attempt"]),
     })
 
 

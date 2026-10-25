@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from diligence_pipelines.cli import discover_uspto_odp, refresh_uspto_odp, run_entity_graph, run_multilingual_events, run_public_awards, run_technology_talent, run_trade_exposure, validate_comtrade, validate_gdelt, validate_manifests
-from diligence_pipelines.sources.uspto_odp import BulkArtifact
 from diligence_pipelines.settings import Settings
 
 
@@ -95,47 +94,6 @@ def test_odp_default_discovery_path_resolves_once_under_data_root(tmp_path: Path
     report = json.loads(settings.uspto_odp_discovery_path.read_text())
     assert report["candidate_count"] == 1
     assert not (tmp_path / ".data").exists()
-
-
-def test_odp_refresh_prepares_release_without_ingesting(tmp_path: Path, monkeypatch):
-    selection = tmp_path / "selection.json"
-    selection.write_text('{"status": "approved_for_download", "download_url": "https://example.test/patents.jsonl", "reviewer": "analyst", "review_note": "approved"}\n')
-    output = tmp_path / "patents.jsonl"
-    report_path = tmp_path / "refresh.json"
-
-    def fake_download(url, destination, api_key=None):
-        payload = Path("tests/fixtures/patents_bulk.jsonl").read_bytes()
-        destination.write_bytes(payload)
-        import hashlib
-        digest = hashlib.sha256(payload).hexdigest()
-        return BulkArtifact(str(destination), url, "2026-10-11T00:00:00+00:00", digest, len(payload), 200)
-
-    monkeypatch.setattr("diligence_pipelines.cli.download_bulk_artifact", fake_download)
-    assert refresh_uspto_odp(selection, output, None, report_path, None, None, 10, Settings(data_root=tmp_path)) == 0
-    report = __import__("json").loads(report_path.read_text())
-    assert report["ingestion_status"] == "not_started"
-    assert report["quality"]["status"] == "pass"
-    assert report["refresh_id"]
-    assert (tmp_path / "indexes/uspto_patents/odp_refresh_history.jsonl").exists()
-    assert output.exists()
-
-
-def test_odp_refresh_records_download_failure_without_ingesting(tmp_path: Path, monkeypatch):
-    selection = tmp_path / "selection.json"
-    selection.write_text('{"status": "approved_for_download", "download_url": "https://example.test/patents.jsonl", "reviewer": "analyst", "review_note": "approved"}\n')
-    report_path = tmp_path / "refresh.json"
-
-    def failed_download(*args, **kwargs):
-        raise RuntimeError("source unavailable")
-
-    monkeypatch.setattr("diligence_pipelines.cli.download_bulk_artifact", failed_download)
-    assert refresh_uspto_odp(selection, tmp_path / "patents.jsonl", None, report_path, None, None, 10, Settings(data_root=tmp_path)) == 2
-    report = __import__("json").loads(report_path.read_text())
-    assert report["status"] == "failed"
-    assert report["ingestion_status"] == "not_started"
-    assert report["error"] == "source unavailable"
-    history = tmp_path / "indexes/uspto_patents/odp_refresh_history.jsonl"
-    assert __import__("json").loads(history.read_text().splitlines()[-1])["status"] == "failed"
 
 
 def test_pipeline_04_award_fixture_publishes_all_outputs(tmp_path: Path):

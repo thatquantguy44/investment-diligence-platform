@@ -39,6 +39,7 @@ def open_url_with_retries(
     attempts: int = 3,
     backoff_seconds: float = 0.5,
     max_backoff_seconds: float = 60.0,
+    open_request=None,
 ):
     """Open a source request with bounded retries for transient failures.
 
@@ -54,7 +55,7 @@ def open_url_with_retries(
         raise ValueError("max_backoff_seconds must be at least backoff_seconds")
     for attempt in range(attempts):
         try:
-            return urlopen(request, timeout=timeout, context=context)
+            return (open_request or urlopen)(request, timeout=timeout, context=context)
         except HTTPError as exc:
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:

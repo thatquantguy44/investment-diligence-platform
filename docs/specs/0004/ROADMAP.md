@@ -3,8 +3,9 @@
 **Status:** Implementation in progress. The USPTO search and product-detail
 endpoint have been verified live; realistic metadata fixtures, exact
 `PVGPATDIS` / `g_patent.tsv.zip` selection, capture lineage, and a successful
-metadata-only live discovery are in place. Approval binding and download
-guards remain pending. See the
+metadata-only live discovery are in place. Approval binding, download guards,
+and audited retry logic are implemented in code. Analyst-reviewed size and
+freshness limits and a live manual acceptance run remain pending. See the
 [specification](0004-controlled-bulk-source-discovery.md).
 
 1. Confirm the current USPTO product-detail endpoint and sanitize realistic

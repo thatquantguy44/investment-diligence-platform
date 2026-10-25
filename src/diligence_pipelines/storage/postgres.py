@@ -255,6 +255,15 @@ class PostgresStorage:
         connection.commit()
         return f"postgresql://diligence/raw_captures/{capture.content_sha256}"
 
+    def read_raw(self, content_sha256: str, source_id: str = "uspto_odp") -> bytes:
+        connection = self._connect()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT payload FROM diligence.raw_captures WHERE content_sha256 = %s AND source_id = %s", (content_sha256, source_id))
+            row = cursor.fetchone()
+        if row is None:
+            raise FileNotFoundError("USPTO raw capture not found")
+        return bytes(row[0])
+
     def publish_entity_product(self, run_id: str, entities: list[dict[str, Any]], product: dict[str, Any], aliases: list[dict[str, Any]] | None = None, match_candidates: list[dict[str, Any]] | None = None) -> str:
         connection = self._connect()
         with connection.cursor() as cursor:

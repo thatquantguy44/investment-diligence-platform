@@ -29,6 +29,9 @@ class LocalStorage:
         }, indent=2) + "\n")
         return str(destination)
 
+    def read_raw(self, content_sha256: str, source_id: str = "uspto_odp") -> bytes:
+        return (self.root / "raw" / source_id / f"{content_sha256}.bin").read_bytes()
+
     def write_jsonl(self, relative_path: str, records: list[dict]) -> Path:
         destination = self.root / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)

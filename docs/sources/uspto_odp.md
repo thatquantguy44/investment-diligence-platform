@@ -30,10 +30,12 @@ PYTHONPATH=src python -m diligence_pipelines.cli discover-uspto-odp \
 Inspect the candidate and its two raw metadata captures in the discovery
 report. Discovery requires one `PVGPATDIS` product and one exact
 `g_patent.tsv.zip` file. A missing or ambiguous match is reported as blocked.
-The Spec 0004 approval binding and pre-download checks are still pending;
-the current review and refresh commands below describe the existing legacy
-workflow and should not be used for this new candidate until those gates are
-implemented.
+Review requires `USPTO_ODP_REVIEWER_NAME` and
+`USPTO_ODP_REVIEWER_OS_USER` in the runtime configuration. The latter is
+checked against the process UID, so a `--reviewer` argument alone does not
+grant authority. The discovery and approval records are immutable private
+files on the persistent USPTO artifact volume; the active selection is a
+mutable pointer to the approval record.
 
 The legacy catalog selection command remains available for fixture replay:
 
@@ -44,26 +46,33 @@ PYTHONPATH=src python -m diligence_pipelines.cli select-uspto-odp \
   --output .data/uspto/selection.json
 ```
 
-For scheduled discovery, create an explicit review record before downloading:
+After checking the exact candidate and both captures, create an explicit
+review record:
 
 ```bash
 PYTHONPATH=src python -m diligence_pipelines.cli review-uspto-odp \
   --discovery .data/uspto/odp_discovery.json \
   --candidate-index 0 \
-  --reviewer "analyst@example.com" \
+  --reviewer "Your configured analyst name" \
   --note "Approved current granted-patent product for the Pipeline 02 refresh" \
   --output .data/uspto/reviewed_selection.json
 ```
 
-Prepare a reviewed release for download and validation. This command does not
-ingest into PostgreSQL:
+Before a live refresh, set analyst-reviewed values for
+`USPTO_ODP_MIN_SIZE_BYTES`, `USPTO_ODP_MAX_SIZE_BYTES`,
+`USPTO_ODP_MAX_RELEASE_AGE_DAYS`, and
+`USPTO_ODP_REFRESH_MAX_AGE_DAYS`. Empty values block the refresh before any
+provider request. A policy change requires a new discovery and approval.
+Then prepare the reviewed release. This command rechecks product detail,
+validates the byte count, checksum when offered, ZIP member and record quality,
+and does not ingest into PostgreSQL:
 
 ```bash
 PYTHONPATH=src python -m diligence_pipelines.cli refresh-uspto-odp \
   --selection .data/uspto/reviewed_selection.json \
   --output .data/uspto/g_patent.tsv.zip \
   --previous-file .data/uspto/g_patent.previous.tsv.zip \
-  --report-output .data/uspto/refresh_report.json \
+  --report-output .data/uspto/g_patent.tsv.zip.refresh.json \
   --quality-output .data/uspto/quality_report.json
 ```
 
@@ -78,9 +87,21 @@ Use the scheduler-friendly wrapper for the same reviewed-only operation:
 ./scripts/uspto_odp_refresh.sh \
   --selection .data/uspto/reviewed_selection.json \
   --output .data/uspto/g_patent.tsv.zip \
-  --report-output .data/uspto/refresh_report.json \
-  --max-age-days 45
+  --report-output .data/uspto/g_patent.tsv.zip.refresh.json
 ```
+
+After a blocked or failed attempt, the configured analyst can request one
+audited retry of the same approved revision:
+
+```bash
+PYTHONPATH=src python -m diligence_pipelines.cli retry-uspto-odp \
+  --selection .data/uspto/reviewed_selection.json \
+  --note "Verified the source outage is resolved"
+```
+
+For a run that was scheduled but interrupted, first verify no run remains
+active, then add `--confirm-interrupted`. Dagster uses a new run key for that
+audited attempt. A changed source file still requires new analyst approval.
 
 Every prepared, blocked, or failed refresh writes a durable report. Local runs
 append to `.data/indexes/uspto_patents/odp_refresh_history.jsonl`; PostgreSQL

@@ -1,6 +1,6 @@
 # Spec 0004: Controlled Bulk Source Discovery
 
-**Status:** Draft for analyst and engineering review
+**Status:** Implementation in progress; deployment policy and live acceptance pending
 **Version:** 0.1.0
 **Extends:** [Spec 0001](../0001/0001-investment-diligence-pipelines.md), Pipeline 02
 **Owner:** Quantitative diligence / data engineering
@@ -290,8 +290,8 @@ measurements, and their thresholds must be reviewed before acceptance.
 2. What release-age and data-horizon thresholds are acceptable for this
    quarterly product? The current 45-day patent-date check may block a valid
    quarterly release and should be evaluated from recorded release history.
-3. Where should immutable approval records live in the deployment (persistent
-   artifact volume, PostgreSQL, or both), and who may mark one superseded?
+3. Immutable approval records use the persistent USPTO artifact volume with
+   private OS permissions. The supersession policy still needs analyst review.
 4. Which sanitized source capture should become the checked-in contract
    fixture after validating the current live detail endpoint?
 

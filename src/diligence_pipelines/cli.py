@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import tempfile
 import uuid
 from dataclasses import asdict
@@ -21,7 +22,10 @@ from diligence_pipelines.llm_events import LLMEventExtractor, OllamaClient
 from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report, load_event_query
 from diligence_pipelines.quality import validate_awards, validate_entities, validate_event_candidates, validate_financial_facts, validate_patent_records, validate_research_works, validate_trade_flows
 from diligence_pipelines.settings import Settings
+from diligence_pipelines.odp_approval import approve_candidate, record_discovery_snapshot, validate_approval, validate_refresh_policy
+from diligence_pipelines.odp_execution import record_outcome, request_retry
 from diligence_pipelines.sources import RawCapture, SourceRequest, comtrade_response_metadata, compare_bulk_releases, discover_catalog_artifacts, download_bulk_artifact, enrich_bulk_patents, fetch_comtrade, fetch_gleif_lei, fetch_odp_product, fetch_openalex_works, fetch_patents, fetch_patents_from_bulk_file, fetch_sec_submissions, iter_bulk_patent_index, load_bulk_patent_index, load_comtrade_fixture, normalize_cik, normalize_gleif_alias, normalize_lei, normalize_openalex_works, normalize_patents, normalize_sec_entity, normalize_trade_flows, profile_bulk_release, review_catalog_artifact, search_odp_products, select_catalog_artifact, select_odp_candidate
+from diligence_pipelines.sources.uspto_odp import verify_patent_archive
 from diligence_pipelines.sources.sec import ANNUAL_FORMS, fetch_sec_companyfacts, load_sec_facts_fixture, normalize_financial_facts, sec_facts_metadata
 from diligence_pipelines.sources.gdelt import fetch_gdelt_articles, gdelt_response_metadata, load_gdelt_fixture, normalize_gdelt_articles
 from diligence_pipelines.sources.usaspending import award_search_metadata, fetch_award_search, fetch_award_transactions, load_usaspending_fixture, normalize_award_transactions, normalize_awards
@@ -113,7 +117,7 @@ def discover_uspto_odp(query: str | None, output: Path | None, fixture: Path | N
             detail_capture = RawCapture(SourceRequest("uspto_odp" if not fixture else "synthetic_fixture", detail_uri), detail_payload, status_code=200 if not product_fixture else None)
             report["detail_capture_sha256"] = detail_capture.content_sha256
             report["detail_capture_path"] = storage.write_raw(detail_capture)
-            candidate = select_odp_candidate(payload, detail_payload, settings.uspto_odp_product_identifier, settings.uspto_odp_artifact_name)
+            candidate = select_odp_candidate(payload, detail_payload, settings.uspto_odp_product_identifier, settings.uspto_odp_artifact_name, settings.uspto_odp_policy_limits)
             candidate.update({"discovery_id": report["discovery_id"], "discovered_at": discovered_at, "search_capture_sha256": search_capture.content_sha256, "detail_capture_sha256": detail_capture.content_sha256})
             report["candidates"] = [candidate]
             search_metadata = json.loads(payload)
@@ -129,7 +133,8 @@ def discover_uspto_odp(query: str | None, output: Path | None, fixture: Path | N
         report["reasons"] = ["No USPTO ODP artifact matched the configured product and file policy"]
     destination = output if output is not None else settings.uspto_odp_discovery_path
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(report, indent=2) + "\n")
+    record_discovery_snapshot(report, settings.data_root)
+    destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     storage.record_uspto_odp_discovery(report)
     print(json.dumps({"status": report["status"], "output": str(destination), "candidate_count": report["candidate_count"], "catalog_sha256": report["catalog_sha256"], "reasons": report.get("reasons", [])}, indent=2))
     return 0 if report["status"] == "discovered" else 2
@@ -143,67 +148,138 @@ def select_uspto_odp(catalog: Path, contains: str, output: Path) -> int:
     return 0
 
 
-def review_uspto_odp(discovery: Path, candidate_index: int, reviewer: str, note: str, output: Path) -> int:
-    selection = review_catalog_artifact(json.loads(discovery.read_text()), candidate_index=candidate_index, reviewer=reviewer, note=note)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(selection, indent=2) + "\n")
-    print(json.dumps({"status": selection["status"], "output": str(output), "download_url": selection["download_url"], "reviewer": reviewer}, indent=2))
+def review_uspto_odp(discovery: Path, candidate_index: int, reviewer: str, note: str, output: Path, settings: Settings) -> int:
+    selection = approve_candidate(discovery, candidate_index, reviewer, note, output, settings, build_storage(settings))
+    print(json.dumps({"status": selection["status"], "output": str(output), "approval_id": selection["approval_id"], "reviewer": reviewer}, indent=2))
     return 0
 
 
 def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, report_output: Path | None, quality_output: Path | None, max_age_days: int | None, max_examples: int, settings: Settings) -> int:
     """Prepare a reviewed ODP release without changing the indexed database."""
-    approval = json.loads(selection.read_text())
-    if approval.get("status") != "approved_for_download":
-        raise SystemExit("ODP selection must have status approved_for_download")
-    url = approval.get("download_url")
-    if not isinstance(url, str):
-        raise SystemExit("ODP selection is missing download_url")
-    output.parent.mkdir(parents=True, exist_ok=True)
     report_path = report_output or Path(str(output) + ".refresh.json")
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        approval, candidate = validate_approval(selection, settings, build_storage(settings))
+    except (ValueError, KeyError, FileNotFoundError, PermissionError, json.JSONDecodeError) as exc:
+        report = {
+            "refresh_id": str(uuid.uuid4()), "status": "blocked",
+            "prepared_at": datetime.now(timezone.utc).isoformat(),
+            "reason": str(exc), "reason_type": type(exc).__name__,
+            "ingestion_status": "not_started",
+        }
+        report_path.write_text(json.dumps(report, indent=2) + "\n")
+        build_storage(settings).record_uspto_odp_refresh(report)
+        print(json.dumps({"status": "blocked", "report": str(report_path), "reason": report["reason"]}, indent=2))
+        return 2
+    try:
+        validate_refresh_policy(candidate, settings, max_age_days)
+        if not settings.uspto_api_key:
+            raise ValueError("USPTO_API_KEY is required for a fresh product-detail recheck")
+        detail_payload = fetch_odp_product(settings.uspto_odp_product_identifier, settings.uspto_api_key)
+        fresh_capture = RawCapture(SourceRequest("uspto_odp", f"https://api.uspto.gov/api/v1/datasets/products/{settings.uspto_odp_product_identifier}"), detail_payload, status_code=200)
+        fresh_capture_path = build_storage(settings).write_raw(fresh_capture)
+        identity_search = json.dumps({"count": 1, "bulkDataProductBag": [{"productIdentifier": settings.uspto_odp_product_identifier}]}).encode()
+        current = select_odp_candidate(identity_search, detail_payload, settings.uspto_odp_product_identifier, settings.uspto_odp_artifact_name, settings.uspto_odp_policy_limits)
+        if current["candidate_fingerprint"] != candidate["candidate_fingerprint"]:
+            raise ValueError("USPTO provider metadata changed since analyst approval")
+    except (ValueError, RuntimeError, KeyError, json.JSONDecodeError) as exc:
+        report = {
+            "refresh_id": str(uuid.uuid4()), "status": "blocked",
+            "prepared_at": datetime.now(timezone.utc).isoformat(),
+            "approval_id": approval["approval_id"], "candidate_fingerprint": candidate["candidate_fingerprint"],
+            "reason": str(exc), "reason_type": type(exc).__name__,
+            "ingestion_status": "not_started",
+        }
+        report_path.write_text(json.dumps(report, indent=2) + "\n")
+        build_storage(settings).record_uspto_odp_refresh(report)
+        record_outcome(settings, approval, report)
+        print(json.dumps({"status": "blocked", "report": str(report_path), "reason": report["reason"]}, indent=2))
+        return 2
+    url = approval["download_url"]
+    output.parent.mkdir(parents=True, exist_ok=True)
     temp_handle = tempfile.NamedTemporaryFile(prefix=".odp-download-", suffix=output.suffix, dir=output.parent, delete=False)
     temp_path = Path(temp_handle.name)
     temp_handle.close()
+    sidecar = Path(str(output) + ".json")
+    temp_sidecar = Path(str(temp_path) + ".json")
+    artifact_backup = output.with_name(f".{output.name}.{uuid.uuid4().hex}.backup")
+    sidecar_backup = sidecar.with_name(f".{sidecar.name}.{uuid.uuid4().hex}.backup")
+    promoted = False
     try:
-        artifact = download_bulk_artifact(url, temp_path, api_key=settings.uspto_api_key)
+        artifact = download_bulk_artifact(url, temp_path, api_key=settings.uspto_api_key, expected_size=candidate["size_bytes"], max_bytes=settings.uspto_odp_max_size_bytes)
+        if artifact.size_bytes != candidate["size_bytes"] or temp_path.stat().st_size != candidate["size_bytes"]:
+            raise ValueError("Downloaded byte count differs from approved provider metadata")
+        with temp_path.open("rb") as downloaded_file:
+            downloaded_sha256 = hashlib.file_digest(downloaded_file, "sha256").hexdigest()
+        if downloaded_sha256 != artifact.content_sha256:
+            raise ValueError("Downloaded SHA-256 does not match the transfer record")
+        checksum = candidate.get("provider_checksum")
+        if checksum:
+            expected_checksum = str(checksum).removeprefix("sha256:").lower()
+            if len(expected_checksum) != 64 or any(character not in "0123456789abcdef" for character in expected_checksum):
+                raise ValueError("Unsupported USPTO provider checksum format")
+            if artifact.content_sha256 != expected_checksum:
+                raise ValueError("Downloaded SHA-256 differs from provider checksum")
+        archive = verify_patent_archive(temp_path, max_uncompressed_bytes=settings.uspto_odp_max_size_bytes * 20)
+        quality = profile_bulk_release(temp_path, max_age_days=settings.uspto_odp_refresh_max_age_days)
+        quality["path"] = str(output)
         new_sha = artifact.content_sha256
-        existing_sha = None
-        sidecar = Path(str(output) + ".json")
-        if sidecar.exists():
-            existing_sha = json.loads(sidecar.read_text()).get("content_sha256")
+        existing_sha = json.loads(sidecar.read_text()).get("content_sha256") if sidecar.exists() else None
         changed = existing_sha != new_sha or not output.exists()
-        if changed:
-            temp_path.replace(output)
-            Path(str(temp_path) + ".json").unlink(missing_ok=True)
-            sidecar.write_text(json.dumps({**artifact.__dict__, "path": str(output)}, indent=2) + "\n")
-        else:
-            temp_path.unlink(missing_ok=True)
-            Path(str(temp_path) + ".json").unlink(missing_ok=True)
-        quality = profile_bulk_release(output, max_age_days=max_age_days)
-        previous_quality = profile_bulk_release(previous, max_age_days=max_age_days) if previous and previous.exists() and changed else None
-        diff = compare_bulk_releases(previous, output, max_examples=max_examples) if previous and previous.exists() and changed else None
+        previous_quality = profile_bulk_release(previous, max_age_days=settings.uspto_odp_refresh_max_age_days) if previous and previous.exists() and changed else None
+        diff = compare_bulk_releases(previous, temp_path, max_examples=max_examples) if previous and previous.exists() and changed else None
         report = {
             "refresh_id": str(uuid.uuid4()),
             "status": "prepared" if quality["status"] == "pass" else "blocked",
             "prepared_at": datetime.now(timezone.utc).isoformat(),
-            "selection": approval,
+            "approval_id": approval["approval_id"], "candidate_fingerprint": candidate["candidate_fingerprint"],
+            "pre_download_detail_sha256": fresh_capture.content_sha256,
+            "pre_download_detail_path": fresh_capture_path,
             "artifact": {**artifact.__dict__, "path": str(output), "changed": changed},
+            "archive": archive,
+            "provider_checksum_status": "verified" if checksum else "unavailable",
             "quality": quality,
             "previous_quality": previous_quality,
             "diff": diff,
             "ingestion_status": "not_started",
             "ingestion_command": f"PYTHONPATH=src python -m diligence_pipelines.cli ingest-uspto-bulk --patent-file {output}",
         }
-        report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        if quality["status"] != "pass":
+            report["reason"] = "USPTO archive record quality or patent-date freshness failed"
+            report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+            build_storage(settings).record_uspto_odp_refresh(report)
+            record_outcome(settings, approval, report)
+            print(json.dumps({"status": "blocked", "report": str(report_path), "reason": report["reason"]}, indent=2))
+            return 2
         if quality_output:
             quality_output.parent.mkdir(parents=True, exist_ok=True)
             quality_output.write_text(json.dumps(quality, indent=2) + "\n")
-        storage = build_storage(settings)
-        storage.record_uspto_odp_refresh(report)
+        if changed:
+            temp_sidecar.write_text(json.dumps({**artifact.__dict__, "path": str(output)}, indent=2) + "\n")
+            if output.exists():
+                os.link(output, artifact_backup)
+            if sidecar.exists():
+                os.link(sidecar, sidecar_backup)
+            temp_path.replace(output)
+            promoted = True
+            temp_sidecar.replace(sidecar)
+        report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        build_storage(settings).record_uspto_odp_refresh(report)
+        record_outcome(settings, approval, report)
+        artifact_backup.unlink(missing_ok=True)
+        sidecar_backup.unlink(missing_ok=True)
         print(json.dumps({"status": report["status"], "output": str(output), "changed": changed, "report": str(report_path), "ingestion_status": "not_started"}, indent=2))
-        return 0 if report["status"] == "prepared" else 2
+        return 0
     except Exception as exc:
+        if promoted:
+            if artifact_backup.exists():
+                artifact_backup.replace(output)
+            else:
+                output.unlink(missing_ok=True)
+            if sidecar_backup.exists():
+                sidecar_backup.replace(sidecar)
+            else:
+                sidecar.unlink(missing_ok=True)
         report = {
             "refresh_id": str(uuid.uuid4()),
             "status": "failed",
@@ -216,16 +292,22 @@ def refresh_uspto_odp(selection: Path, output: Path, previous: Path | None, repo
         }
         report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
         try:
-            storage = build_storage(settings)
-            storage.record_uspto_odp_refresh(report)
+            record_outcome(settings, approval, report)
+        except Exception as state_exc:
+            report["execution_state_error"] = str(state_exc)
+        try:
+            build_storage(settings).record_uspto_odp_refresh(report)
         except Exception as storage_exc:
             report["history_record_error"] = str(storage_exc)
+        if "execution_state_error" in report or "history_record_error" in report:
             report_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
         print(json.dumps({"status": "failed", "report": str(report_path), "ingestion_status": "not_started", "error": str(exc)}, indent=2))
         return 2
     finally:
         temp_path.unlink(missing_ok=True)
-        Path(str(temp_path) + ".json").unlink(missing_ok=True)
+        temp_sidecar.unlink(missing_ok=True)
+        artifact_backup.unlink(missing_ok=True)
+        sidecar_backup.unlink(missing_ok=True)
 
 
 def index_uspto_bulk(path: Path, limit: int | None, settings: Settings) -> int:
@@ -1033,6 +1115,10 @@ def main() -> int:
     review_parser.add_argument("--reviewer", required=True)
     review_parser.add_argument("--note", required=True, help="Human review rationale")
     review_parser.add_argument("--output", type=Path, required=True, help="Reviewed selection manifest path")
+    retry_parser = subparsers.add_parser("retry-uspto-odp", help="Audit and request a new Dagster attempt after a blocked or failed reviewed refresh")
+    retry_parser.add_argument("--selection", type=Path, required=True)
+    retry_parser.add_argument("--note", required=True, help="Analyst rationale for retrying the same approved revision")
+    retry_parser.add_argument("--confirm-interrupted", action="store_true", help="Confirm a scheduled run was interrupted and is no longer active")
     match_review_parser = subparsers.add_parser("apply-entity-match-review", help="Publish only analyst-accepted company-match edges from a review queue")
     match_review_parser.add_argument("--review", type=Path, required=True, help="YAML review queue with accepted, rejected, or pending decisions")
     refresh_parser = subparsers.add_parser("refresh-uspto-odp")
@@ -1113,7 +1199,11 @@ def main() -> int:
     if args.command == "select-uspto-odp":
         return select_uspto_odp(args.catalog, args.contains, args.output)
     if args.command == "review-uspto-odp":
-        return review_uspto_odp(args.discovery, args.candidate_index, args.reviewer, args.note, args.output)
+        return review_uspto_odp(args.discovery, args.candidate_index, args.reviewer, args.note, args.output, Settings.from_env())
+    if args.command == "retry-uspto-odp":
+        retry = request_retry(Settings.from_env(), args.selection, args.note, confirm_interrupted=args.confirm_interrupted)
+        print(json.dumps({"status": "retry_requested", "approval_id": retry["approval_id"], "attempt": retry["attempt"], "retry_id": retry["retry_id"]}, indent=2))
+        return 0
     if args.command == "apply-entity-match-review":
         return apply_entity_match_review(args.review, Settings.from_env())
     if args.command == "refresh-uspto-odp":
