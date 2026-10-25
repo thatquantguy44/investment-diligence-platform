@@ -18,12 +18,13 @@ spec; this file records sequencing and dependencies across the repository.
 | Pipeline 01 — Entity graph | Complete for pilot | SEC EDGAR watchlist, optional GLEIF enrichment, provenance, quality gates, local/PostgreSQL publication |
 | Pipeline 02 — Technology and talent | Complete for pilot slice; hardening in progress | OpenAlex research metadata plus USPTO ODP-backed local patent index |
 | USPTO ODP release discovery | In progress | Scheduled catalog discovery and candidate snapshots; no automatic download or ingestion |
-| Pipeline 03 — Trade exposure | Pilot; follow-on hardening started | Bounded UN Comtrade-compatible country/product aggregates, non-publishing validation, and source-vintage/revision metadata |
+| Pipeline 03 — Trade exposure | Pilot; scope selected, validation pending | USA (`842`) semiconductors/microelectronics (`8541`, `8542`) slice with non-publishing validation and source-vintage/revision metadata |
 | Pipeline 04 — Public awards | Pilot | Bounded USAspending contracts/grants with modification history, recipient concentration, and unreviewed entity candidates; live path not yet run |
 | Pipeline 05 — Multilingual events | Prototype | GDELT DOC discovery, syndication handling, rule-based evidence-checked event candidates, entity mention edges; no LLM extractor or review workflow yet |
 | Spec 0002 procurement signals | Planned | One country and one sector must be selected before implementation |
 | Spec 0002 career-page signals | Planned | Source permission and company allowlist must be defined before collection |
 | Spec 0003 WIFO/CNIPA signals | Placeholder | Candidate sources only; scope, access, and use case not yet defined |
+| Spec 0004 controlled bulk discovery | Draft for review | USPTO product and artifact identity, source evidence, analyst approval, and guarded refresh contract |
 
 ## Ordered roadmap
 
@@ -34,15 +35,16 @@ spec; this file records sequencing and dependencies across the repository.
   release quality checks are implemented; PostgreSQL ingestion remains explicit.
 - Finish full-release ingestion at production scale, alerting, and operational
   scheduling around approved refreshes.
-- Populate the deduplicated `diligence.patent_catalog` after completed loads;
-  keep `diligence.patent_records` run-scoped for historical evidence.
+- The deduplicated `diligence.patent_catalog` is materialized from the full
+  index and checked for count/source-hash parity; keep
+  `diligence.patent_records` run-scoped for historical evidence.
 - OpenAlex live requests now honor `Retry-After` with bounded exponential
   backoff; snapshot/backfill support remains deferred.
 - Keep OpenAlex and USPTO lineage explicit in every materialization.
 
 ### 2. Stabilize the shared operating layer — Planned
 
-- Add migrations for PostgreSQL schema changes.
+- Extend the applied PostgreSQL migration registry as schema changes are made.
 - Add structured run history, stale-source alerts, and failure notification.
 - Add a consumer adapter for product manifests and contract versions.
 - Select the approved production scheduler/object-store deployment.
@@ -103,3 +105,4 @@ record alone.
 - [Spec 0001 roadmap](specs/0001/ROADMAP.md)
 - [Spec 0002 roadmap](specs/0002/ROADMAP.md)
 - [Spec 0003 roadmap](specs/0003/ROADMAP.md)
+- [Spec 0004 roadmap](specs/0004/ROADMAP.md)

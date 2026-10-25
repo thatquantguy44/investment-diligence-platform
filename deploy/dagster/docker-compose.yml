@@ -1,0 +1,33 @@
+name: investment-diligence-dagster
+
+x-dagster-service: &dagster-service
+  build:
+    context: ../..
+    dockerfile: deploy/dagster/Dockerfile
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DAGSTER_HOME: /var/lib/dagster
+    DILIGENCE_DATA_ROOT: /var/lib/diligence
+    DILIGENCE_STORAGE_BACKEND: postgres
+  volumes:
+    - dagster_home:/var/lib/dagster
+    - uspto_artifacts:/var/lib/diligence
+
+services:
+  webserver:
+    <<: *dagster-service
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -w /opt/diligence/deploy/dagster/workspace.yaml
+    ports:
+      - "3000:3000"
+
+  daemon:
+    <<: *dagster-service
+    command: dagster-daemon run -w /opt/diligence/deploy/dagster/workspace.yaml
+
+volumes:
+  dagster_home:
+    name: investment_diligence_dagster_home
+  uspto_artifacts:
+    name: investment_diligence_uspto_artifacts

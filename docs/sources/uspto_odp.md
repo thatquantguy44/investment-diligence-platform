@@ -20,15 +20,22 @@ The local PostgreSQL patent index does not require a key after the bulk artifact
 
 ## Recommended setup path
 
-Search the ODP catalog:
+Run metadata-only discovery for the configured product and exact file:
 
 ```bash
-PYTHONPATH=src python -m diligence_pipelines.cli search-uspto-odp \
-  --query "granted patent disambiguated" \
-  --output .data/uspto/catalog.json
+PYTHONPATH=src python -m diligence_pipelines.cli discover-uspto-odp \
+  --output .data/uspto/odp_discovery.json
 ```
 
-Select one artifact:
+Inspect the candidate and its two raw metadata captures in the discovery
+report. Discovery requires one `PVGPATDIS` product and one exact
+`g_patent.tsv.zip` file. A missing or ambiguous match is reported as blocked.
+The Spec 0004 approval binding and pre-download checks are still pending;
+the current review and refresh commands below describe the existing legacy
+workflow and should not be used for this new candidate until those gates are
+implemented.
+
+The legacy catalog selection command remains available for fixture replay:
 
 ```bash
 PYTHONPATH=src python -m diligence_pipelines.cli select-uspto-odp \
@@ -65,6 +72,22 @@ checks, freshness information, and new/changed/removed patent ID examples.
 Only an explicit `ingest-uspto-bulk` command changes the PostgreSQL patent
 index.
 
+Use the scheduler-friendly wrapper for the same reviewed-only operation:
+
+```bash
+./scripts/uspto_odp_refresh.sh \
+  --selection .data/uspto/reviewed_selection.json \
+  --output .data/uspto/g_patent.tsv.zip \
+  --report-output .data/uspto/refresh_report.json \
+  --max-age-days 45
+```
+
+Every prepared, blocked, or failed refresh writes a durable report. Local runs
+append to `.data/indexes/uspto_patents/odp_refresh_history.jsonl`; PostgreSQL
+runs append to `diligence.uspto_odp_refreshes`. The wrapper exits nonzero for
+blocked quality or download failures so an approved scheduler can route alerts.
+It never invokes ingestion or promotion automatically.
+
 The PostgreSQL model keeps two separate patent products:
 
 - `diligence.patent_index` is the searchable USPTO bulk-release index.
@@ -82,6 +105,12 @@ PYTHONPATH=src python -m diligence_pipelines.cli materialize-patent-catalog
 
 This command upserts from the current `patent_index`; it does not delete or
 rewrite run-scoped `patent_records`.
+
+Each PostgreSQL materialization records its UUID, source-file hashes, index and
+catalog counts, parity-mismatch count, duration, and terminal status in
+`diligence.patent_catalog_materializations`. A nonzero mismatch count returns a
+nonzero CLI status and should be investigated before treating the catalog as
+ready for downstream use.
 
 Download the selected official artifact, then ingest a bounded pilot:
 
@@ -112,9 +141,11 @@ The repository includes a scheduler-ready discovery wrapper:
 ./scripts/uspto_odp_discovery.sh
 ```
 
-It polls the configured ODP catalog, records every matching downloadable
-artifact, and does **not** select, download, or ingest a release. The default
-query is `USPTO_ODP_PRODUCT_QUERY`; the latest snapshot is written to
+It searches the configured ODP catalog, fetches the exact `PVGPATDIS` product
+detail, and records the `g_patent.tsv.zip` candidate with both raw metadata
+captures. It does **not** download or ingest a release. The default query is
+`PatentsView`; the product and file policy are configured with
+`USPTO_ODP_PRODUCT_IDENTIFIER` and `USPTO_ODP_ARTIFACT_NAME`. The latest snapshot is written to
 `USPTO_ODP_DISCOVERY_OUTPUT`, with append-only history under
 `.data/indexes/uspto_patents/odp_discovery_history.jsonl`. PostgreSQL also
 stores each snapshot in `diligence.uspto_odp_discoveries`.
@@ -123,7 +154,8 @@ Run an offline smoke test:
 
 ```bash
 DILIGENCE_STORAGE_BACKEND=local PYTHONPATH=src python -m diligence_pipelines.cli discover-uspto-odp \
-  --catalog-fixture tests/fixtures/odp_catalog.json \
+  --catalog-fixture tests/fixtures/odp_search_products.json \
+  --product-fixture tests/fixtures/odp_product_PVGPATDIS.json \
   --output .data/uspto/odp_discovery.json
 ```
 

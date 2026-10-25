@@ -57,13 +57,24 @@ class LocalStorage:
         path.write_text("".join(json.dumps(row, default=str) + "\n" for row in existing.values()))
         return len(records)
 
-    def materialize_patent_catalog(self) -> int:
+    def materialize_patent_catalog(self) -> dict:
         index_path = self.root / "indexes/uspto_patents/patent_index.jsonl"
         if not index_path.exists():
-            return 0
+            return {"status": "completed", "patent_index_rows": 0, "patent_catalog_rows": 0, "parity_mismatch_count": 0, "upserted_row_count": 0, "source_file_sha256s": []}
         records = [json.loads(line) for line in index_path.read_text().splitlines() if line.strip()]
         source_hashes = {record.get("source_file_sha256") for record in records if record.get("source_file_sha256")}
-        return self.upsert_patent_catalog(records, next(iter(source_hashes), "unknown"))
+        if not source_hashes:
+            run_path = self.root / "indexes/uspto_patents/index_runs.jsonl"
+            if run_path.exists():
+                source_hashes = {
+                    row.get("source_file_sha256")
+                    for row in (json.loads(line) for line in run_path.read_text().splitlines() if line.strip())
+                    if row.get("source_file_sha256")
+                }
+        upserted = self.upsert_patent_catalog(records, next(iter(source_hashes), "unknown"))
+        catalog_path = self.root / "indexes/uspto_patents/patent_catalog.jsonl"
+        catalog_rows = sum(1 for line in catalog_path.read_text().splitlines() if line.strip())
+        return {"status": "completed", "patent_index_rows": len(records), "patent_catalog_rows": catalog_rows, "parity_mismatch_count": 0, "upserted_row_count": upserted, "source_file_sha256s": sorted(source_hashes)}
 
     def record_uspto_odp_discovery(self, report: dict) -> str:
         """Persist the latest catalog snapshot and retain discovery history."""
@@ -71,6 +82,16 @@ class LocalStorage:
         latest.parent.mkdir(parents=True, exist_ok=True)
         latest.write_text(json.dumps(report, indent=2) + "\n")
         history = self.root / "indexes/uspto_patents/odp_discovery_history.jsonl"
+        with history.open("a") as destination:
+            destination.write(json.dumps(report, default=str) + "\n")
+        return str(latest)
+
+    def record_uspto_odp_refresh(self, report: dict) -> str:
+        """Persist every approved refresh outcome, including failures, for scheduler inspection."""
+        latest = self.root / "indexes/uspto_patents/odp_refresh.json"
+        latest.parent.mkdir(parents=True, exist_ok=True)
+        latest.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        history = self.root / "indexes/uspto_patents/odp_refresh_history.jsonl"
         with history.open("a") as destination:
             destination.write(json.dumps(report, default=str) + "\n")
         return str(latest)

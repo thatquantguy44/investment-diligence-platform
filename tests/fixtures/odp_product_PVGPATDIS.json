@@ -1,0 +1,32 @@
+{
+  "count": 1,
+  "bulkDataProductBag": [
+    {
+      "productIdentifier": "PVGPATDIS",
+      "productTitleText": "PatentsView Granted Patent Disambiguated Data",
+      "productFrequencyText": "QUARTERLY",
+      "productFileBag": {
+        "count": 2,
+        "fileDataBag": [
+          {
+            "fileName": "g_patent.tsv.zip",
+            "fileSize": 232076712,
+            "fileDataFromDate": "1976-01-01",
+            "fileDataToDate": "2025-12-31",
+            "fileTypeText": "Data",
+            "fileDownloadURI": "https://api.uspto.gov/api/v1/datasets/products/files/PVGPATDIS/g_patent.tsv.zip",
+            "fileReleaseDate": "2026-04-10 17:53:29",
+            "fileLastModifiedDateTime": "2026-03-12 22:29:41"
+          },
+          {
+            "fileName": "g_patent_abstract.tsv.zip",
+            "fileSize": 1708330746,
+            "fileTypeText": "Data",
+            "fileDownloadURI": "https://api.uspto.gov/api/v1/datasets/products/files/PVGPATDIS/g_patent_abstract.tsv.zip",
+            "fileReleaseDate": "2026-04-10 17:57:53"
+          }
+        ]
+      }
+    }
+  ]
+}

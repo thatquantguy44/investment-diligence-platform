@@ -21,3 +21,8 @@ def test_comtrade_primary_and_secondary_keys_are_ordered_without_exposing_values
     monkeypatch.setenv("DILIGENCE_VARIABLES_FILE", str(variables))
     settings = Settings.from_env()
     assert settings.comtrade_api_keys == ("primary-secret", "secondary-secret")
+
+
+def test_slack_webhook_configuration_is_optional_and_environment_scoped(monkeypatch):
+    monkeypatch.setenv("DILIGENCE_ALERT_SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/example")
+    assert Settings.from_env().alert_slack_webhook_url == "https://hooks.slack.com/services/example"

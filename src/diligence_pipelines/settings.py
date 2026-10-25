@@ -23,8 +23,15 @@ class Settings:
     uspto_api_key: str | None = None
     uspto_api_url: str = "https://search.patentsview.org/api/v1/patent/"
     uspto_odp_catalog_url: str = "https://api.uspto.gov/api/v1/datasets/products/search"
-    uspto_odp_product_query: str = "PatentsView granted patent disambiguated"
+    uspto_odp_product_query: str = "PatentsView"
+    uspto_odp_product_identifier: str = "PVGPATDIS"
+    uspto_odp_artifact_name: str = "g_patent.tsv.zip"
     uspto_odp_discovery_output: Path = Path(".data/uspto/odp_discovery.json")
+    uspto_odp_reviewed_selection: Path = Path(".data/uspto/reviewed_selection.json")
+    uspto_odp_refresh_output: Path = Path(".data/uspto/g_patent.tsv.zip")
+    uspto_odp_previous_file: Path | None = None
+    uspto_odp_refresh_max_age_days: int = 45
+    alert_slack_webhook_url: str | None = None
     comtrade_api_key: str | None = None
     comtrade_api_key_primary: str | None = None
     comtrade_api_key_secondary: str | None = None
@@ -35,6 +42,18 @@ class Settings:
     llm_base_url: str = "http://localhost:11434"
     llm_event_model: str = ""
     sector_reviewer_config: Path = Path("config/sector_reviewers.yaml")
+
+    @property
+    def uspto_odp_discovery_path(self) -> Path:
+        """Resolve the configured discovery output once against the data root."""
+        configured = self.uspto_odp_discovery_output
+        if configured.is_absolute():
+            return configured
+        if configured.parts and configured.parts[0] == ".data":
+            return self.data_root.joinpath(*configured.parts[1:])
+        if configured.parts[:len(self.data_root.parts)] == self.data_root.parts:
+            return configured
+        return self.data_root / configured
 
     @property
     def comtrade_api_keys(self) -> tuple[str, ...]:
@@ -74,8 +93,15 @@ class Settings:
             uspto_api_key=value("USPTO_API_KEY", "") or None,
             uspto_api_url=value("USPTO_API_URL", "https://search.patentsview.org/api/v1/patent/"),
             uspto_odp_catalog_url=value("USPTO_ODP_CATALOG_URL", "https://api.uspto.gov/api/v1/datasets/products/search"),
-            uspto_odp_product_query=value("USPTO_ODP_PRODUCT_QUERY", "PatentsView granted patent disambiguated"),
+            uspto_odp_product_query=value("USPTO_ODP_PRODUCT_QUERY", "PatentsView"),
+            uspto_odp_product_identifier=value("USPTO_ODP_PRODUCT_IDENTIFIER", "PVGPATDIS"),
+            uspto_odp_artifact_name=value("USPTO_ODP_ARTIFACT_NAME", "g_patent.tsv.zip"),
             uspto_odp_discovery_output=Path(value("USPTO_ODP_DISCOVERY_OUTPUT", ".data/uspto/odp_discovery.json")),
+            uspto_odp_reviewed_selection=Path(value("USPTO_ODP_REVIEWED_SELECTION", ".data/uspto/reviewed_selection.json")),
+            uspto_odp_refresh_output=Path(value("USPTO_ODP_REFRESH_OUTPUT", ".data/uspto/g_patent.tsv.zip")),
+            uspto_odp_previous_file=Path(value("USPTO_ODP_PREVIOUS_FILE", "")) if value("USPTO_ODP_PREVIOUS_FILE", "") else None,
+            uspto_odp_refresh_max_age_days=int(value("USPTO_ODP_REFRESH_MAX_AGE_DAYS", "45")),
+            alert_slack_webhook_url=value("DILIGENCE_ALERT_SLACK_WEBHOOK_URL", "") or None,
             comtrade_api_key=value("COMTRADE_API_KEY", "") or None,
             comtrade_api_key_primary=value("COMTRADE_API_KEY_PRIMARY", "") or value("COMTRADE_API_KEY", "") or None,
             comtrade_api_key_secondary=value("COMTRADE_API_KEY_SECONDARY", "") or None,
