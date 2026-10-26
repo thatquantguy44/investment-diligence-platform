@@ -42,6 +42,89 @@ def test_authenticated_download_rejects_off_host_before_network(tmp_path, monkey
         uspto_odp.download_bulk_artifact("https://example.test/g_patent.tsv.zip", tmp_path / "file.zip", api_key="test-key")
 
 
+def test_authenticated_download_follows_exact_signed_uspto_redirect_without_api_key(tmp_path, monkeypatch):
+    official = "https://api.uspto.gov/api/v1/datasets/products/files/PVGPATDIS/g_patent.tsv.zip"
+    signed = "https://data.uspto.gov/files/PVGPATDIS/g_patent.tsv.zip?Expires=123&Key-Pair-Id=abc&Signature=xyz"
+    requests = []
+
+    def fake_open(request, **kwargs):
+        requests.append(request)
+        if len(requests) == 1:
+            raise HTTPError(official, 302, "Found", {"Location": signed}, None)
+        return _Response()
+
+    monkeypatch.setattr(uspto_odp, "_official_open", fake_open)
+    destination = tmp_path / "file.zip"
+    artifact = uspto_odp.download_bulk_artifact(official, destination, api_key="test-key", expected_size=8, max_bytes=8)
+
+    assert artifact.source_url == official
+    assert destination.read_bytes() == b"artifact"
+    assert len(requests) == 2
+    assert requests[0].get_header("X-api-key") == "test-key"
+    assert requests[1].get_header("X-api-key") is None
+    assert requests[1].full_url == signed
+    assert signed not in Path(str(destination) + ".json").read_text()
+
+
+@pytest.mark.parametrize("signed", [
+    "https://example.test/files/PVGPATDIS/g_patent.tsv.zip?Expires=123&Key-Pair-Id=abc&Signature=xyz",
+    "https://data.uspto.gov/files/PVGPATDIS/other.zip?Expires=123&Key-Pair-Id=abc&Signature=xyz",
+    "https://data.uspto.gov/files/PVGPATDIS/g_patent.tsv.zip?Expires=123&Signature=xyz",
+])
+def test_authenticated_download_rejects_unapproved_redirect(tmp_path, monkeypatch, signed):
+    official = "https://api.uspto.gov/api/v1/datasets/products/files/PVGPATDIS/g_patent.tsv.zip"
+    calls = []
+
+    def fake_open(request, **kwargs):
+        calls.append(request)
+        raise HTTPError(official, 302, "Found", {"Location": signed}, None)
+
+    monkeypatch.setattr(uspto_odp, "_official_open", fake_open)
+    with pytest.raises(RuntimeError, match="redirect"):
+        uspto_odp.download_bulk_artifact(official, tmp_path / "file.zip", api_key="test-key")
+    assert len(calls) == 1
+    assert not (tmp_path / "file.zip").exists()
+
+
+def test_authenticated_download_rejects_second_redirect_without_leaking_signed_url(tmp_path, monkeypatch):
+    official = "https://api.uspto.gov/api/v1/datasets/products/files/PVGPATDIS/g_patent.tsv.zip"
+    signed = "https://data.uspto.gov/files/PVGPATDIS/g_patent.tsv.zip?Expires=123&Key-Pair-Id=abc&Signature=secret-signature"
+    calls = []
+
+    def fake_open(request, **kwargs):
+        calls.append(request)
+        if len(calls) == 1:
+            raise HTTPError(official, 302, "Found", {"Location": signed}, None)
+        raise HTTPError(signed, 302, "Found", {"Location": "https://example.test/other.zip"}, None)
+
+    monkeypatch.setattr(uspto_odp, "_official_open", fake_open)
+    with pytest.raises(RuntimeError, match="signed file host returned HTTP 302") as error:
+        uspto_odp.download_bulk_artifact(official, tmp_path / "file.zip", api_key="test-key")
+    assert len(calls) == 2
+    assert "secret-signature" not in str(error.value)
+
+
+@pytest.mark.parametrize("stage,expected", [
+    ("api", "Official USPTO file endpoint returned HTTP 403"),
+    ("signed", "USPTO signed file host returned HTTP 403"),
+])
+def test_authenticated_download_reports_safe_http_failure_stage(tmp_path, monkeypatch, stage, expected):
+    official = "https://api.uspto.gov/api/v1/datasets/products/files/PVGPATDIS/g_patent.tsv.zip"
+    signed = "https://data.uspto.gov/files/PVGPATDIS/g_patent.tsv.zip?Expires=123&Key-Pair-Id=abc&Signature=secret-signature"
+    calls = []
+
+    def fake_open(request, **kwargs):
+        calls.append(request)
+        if stage == "api" or len(calls) == 2:
+            raise HTTPError(request.full_url, 403, "Forbidden", {}, None)
+        raise HTTPError(official, 302, "Found", {"Location": signed}, None)
+
+    monkeypatch.setattr(uspto_odp, "_official_open", fake_open)
+    with pytest.raises(RuntimeError, match=expected) as error:
+        uspto_odp.download_bulk_artifact(official, tmp_path / "file.zip", api_key="test-key")
+    assert "secret-signature" not in str(error.value)
+
+
 def test_download_rejects_excess_bytes_and_removes_partial_file(monkeypatch, tmp_path):
     monkeypatch.setattr(uspto_odp, "urlopen", lambda *args, **kwargs: _Response())
     output = tmp_path / "file.zip"

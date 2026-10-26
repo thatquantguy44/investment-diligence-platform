@@ -87,6 +87,15 @@ PYTHONPATH=src python -m diligence_pipelines.cli refresh-uspto-odp \
   --quality-output .data/uspto/quality_report.json
 ```
 
+The official file endpoint currently returns a signed HTTP 302 link to
+`data.uspto.gov`. The downloader accepts only HTTPS on that host, the exact
+approved `/files/<product>/<file>` path, and the expected signature fields.
+It creates a separate request without `X-Api-Key` for that signed link and
+rejects further redirects. The signed URL is not written to reports or
+sidecars. This redirect policy is part of source-policy version
+`uspto-odp-pvgpatdis-g-patent-v2`, so approvals under the earlier policy are
+not reusable.
+
 The refresh report includes checksum change status, schema and completeness
 checks, freshness information, and new/changed/removed patent ID examples.
 When USPTO supplies no checksum, the report records
