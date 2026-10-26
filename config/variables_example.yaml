@@ -31,13 +31,25 @@ USPTO_ODP_CATALOG_URL: "https://api.uspto.gov/api/v1/datasets/products/search"
 USPTO_ODP_PRODUCT_QUERY: "PatentsView"
 USPTO_ODP_PRODUCT_IDENTIFIER: "PVGPATDIS"
 USPTO_ODP_ARTIFACT_NAME: "g_patent.tsv.zip"
+# Required for analyst approval. The OS user is checked from the process UID,
+# not from the caller-supplied --reviewer value.
+USPTO_ODP_REVIEWER_NAME: ""
+USPTO_ODP_REVIEWER_OS_USER: ""
 USPTO_ODP_DISCOVERY_OUTPUT: ".data/uspto/odp_discovery.json"
 # Dagster's approved-refresh sensor reads this analyst-reviewed selection. The
 # selection must have status "approved_for_download"; no sensor approves a release.
 USPTO_ODP_REVIEWED_SELECTION: ".data/uspto/reviewed_selection.json"
 USPTO_ODP_REFRESH_OUTPUT: ".data/uspto/g_patent.tsv.zip"
 USPTO_ODP_PREVIOUS_FILE: ""
-USPTO_ODP_REFRESH_MAX_AGE_DAYS: "45"
+# Provisional bounds for the first reviewed PVGPATDIS acceptance run. Revisit
+# after observing multiple releases. Warnings require analyst review before
+# presenting prepared data as current; hard limits block the refresh.
+USPTO_ODP_MIN_SIZE_BYTES: "150000000"
+USPTO_ODP_MAX_SIZE_BYTES: "350000000"
+USPTO_ODP_WARN_RELEASE_AGE_DAYS: "150"
+USPTO_ODP_MAX_RELEASE_AGE_DAYS: "240"
+USPTO_ODP_WARN_PATENT_AGE_DAYS: "240"
+USPTO_ODP_REFRESH_MAX_AGE_DAYS: "330"
 
 # Optional UN Comtrade connector settings for Pipeline 03.
 # Preferred names when using two keys. The adapter tries primary first and

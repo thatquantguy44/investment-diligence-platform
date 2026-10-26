@@ -3,8 +3,15 @@
 **Status:** Implementation in progress. The USPTO search and product-detail
 endpoint have been verified live; realistic metadata fixtures, exact
 `PVGPATDIS` / `g_patent.tsv.zip` selection, capture lineage, and a successful
-metadata-only live discovery are in place. Approval binding and download
-guards remain pending. See the
+metadata-only live discovery are in place. Approval binding, download guards,
+and audited retry logic are implemented in code. Provisional size and freshness
+limits plus a separate stale review status are configured. Metadata-only
+discovery was rerun under source policy v2 after the first approved run exposed
+USPTO's signed file redirect. The v2 candidate was approved, but its manual
+run failed on HTTP 403 and a diagnostic then hit HTTP 429. The analyst
+authorized one audited retry, conditional on a metadata-only health check
+showing source recovery; repeated checks still return HTTP 429. The retry and
+successful live acceptance run remain pending. See the
 [specification](0004-controlled-bulk-source-discovery.md).
 
 1. Confirm the current USPTO product-detail endpoint and sanitize realistic

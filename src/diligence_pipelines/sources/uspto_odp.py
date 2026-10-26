@@ -4,12 +4,13 @@ import hashlib
 import json
 import re
 import ssl
+import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener, urlopen
 
 import certifi
 
@@ -17,7 +18,7 @@ from diligence_pipelines.sources.base import open_url_with_retries
 
 
 DEFAULT_ODP_CATALOG_URL = "https://api.uspto.gov/api/v1/datasets/products/search"
-ODP_POLICY_VERSION = "uspto-odp-pvgpatdis-g-patent-v1"
+ODP_POLICY_VERSION = "uspto-odp-pvgpatdis-g-patent-v2"
 ODP_API_PREFIX = "/api/v1/datasets/products/"
 MAX_METADATA_BYTES = 2_000_000
 DOWNLOAD_KEYS = {"url", "downloadurl", "filedownloaduri", "downloaduri", "fileurl", "download_url", "file_download_uri"}
@@ -126,6 +127,56 @@ def _read_metadata(response) -> bytes:
     return payload
 
 
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def _official_open(request, *, timeout: float, context):
+    """Do not forward an API key across a redirect, even to another USPTO URL."""
+    return build_opener(HTTPSHandler(context=context), _RejectRedirects()).open(request, timeout=timeout)
+
+
+def _signed_file_redirect(location: str | None, approved_url: str) -> str:
+    """Accept only USPTO's signed link for the exact approved file."""
+    if not location or len(location) > 8192:
+        raise ValueError("USPTO file redirect is missing or oversized")
+    parsed = urlparse(location)
+    approved_path = urlparse(approved_url).path
+    expected_path = "/" + approved_path.removeprefix(ODP_API_PREFIX)
+    if (parsed.scheme != "https" or parsed.netloc != "data.uspto.gov"
+            or parsed.path != expected_path or parsed.params or parsed.fragment
+            or parsed.username or parsed.password):
+        raise ValueError("USPTO file redirect has an unapproved host or path")
+    parameters = parse_qsl(parsed.query, keep_blank_values=True)
+    if (len(parameters) != 3 or {key for key, _ in parameters} != {"Expires", "Key-Pair-Id", "Signature"}
+            or any(not value for _, value in parameters)):
+        raise ValueError("USPTO file redirect lacks the expected signed parameters")
+    return location
+
+
+def _open_approved_file(request: Request, context):
+    try:
+        return _official_open(request, timeout=120, context=context)
+    except HTTPError as exc:
+        if exc.code != 302:
+            code = exc.code
+            exc.close()
+            raise ValueError(f"Official USPTO file endpoint returned HTTP {code}") from None
+        location = exc.headers.get("Location")
+        exc.close()
+        signed_url = _signed_file_redirect(location, request.full_url)
+        public_headers = {key: value for key, value in request.header_items() if key.lower() != "x-api-key"}
+        try:
+            return _official_open(Request(signed_url, headers=public_headers), timeout=120, context=context)
+        except HTTPError as signed_error:
+            code = signed_error.code
+            signed_error.close()
+            raise ValueError(f"USPTO signed file host returned HTTP {code}") from None
+        except URLError:
+            raise ValueError("USPTO signed file host network error") from None
+
+
 def _exact_record(records: object, key: str, expected: str, label: str) -> dict:
     if not isinstance(records, list):
         raise ValueError(f"Incomplete {label} records")
@@ -145,7 +196,7 @@ def _complete_bag(data: object, bag_key: str, count_key: str = "count") -> list[
     return bag
 
 
-def select_odp_candidate(search_payload: bytes, detail_payload: bytes, product_identifier: str, artifact_name: str) -> dict:
+def select_odp_candidate(search_payload: bytes, detail_payload: bytes, product_identifier: str, artifact_name: str, policy_limits: dict | None = None) -> dict:
     """Select one exact USPTO product/file from complete provider metadata."""
     search = json.loads(search_payload)
     detail = json.loads(detail_payload)
@@ -162,7 +213,11 @@ def select_odp_candidate(search_payload: bytes, detail_payload: bytes, product_i
         raise ValueError("Selected artifact has an invalid file size")
     if file.get("fileTypeText") != "Data":
         raise ValueError("Selected artifact is not a USPTO data file")
-    policy = {"source_id": "uspto_odp", "product_identifier": product_identifier, "artifact_name": artifact_name, "download_host": "api.uspto.gov", "file_type": "Data"}
+    policy = {"source_id": "uspto_odp", "policy_version": ODP_POLICY_VERSION,
+              "product_identifier": product_identifier, "artifact_name": artifact_name,
+              "download_host": "api.uspto.gov", "signed_redirect_host": "data.uspto.gov",
+              "signed_redirect_path": "exact_approved_file", "redirect_forwards_api_key": False,
+              "file_type": "Data", "limits": policy_limits or {"min_size_bytes": None, "max_size_bytes": None, "max_release_age_days": None, "max_patent_age_days": None}}
     policy_digest = hashlib.sha256(json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     material = {"policy": policy, "download_url": url, "size_bytes": size, "file_release_at": file.get("fileReleaseDate"), "file_modified_at": file.get("fileLastModifiedDateTime"), "provider_checksum": file.get("fileChecksum")}
     fingerprint = hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -187,7 +242,7 @@ def fetch_odp_product(product_identifier: str, api_key: str) -> bytes:
     uri = f"https://api.uspto.gov{ODP_API_PREFIX}{product_identifier}"
     request = Request(uri, headers={"X-Api-Key": api_key, "Accept": "application/json", "User-Agent": "investment-diligence-pipelines/0.1"})
     try:
-        with open_url_with_retries(request, timeout=60, context=ssl.create_default_context(cafile=certifi.where())) as response:
+        with open_url_with_retries(request, timeout=60, context=ssl.create_default_context(cafile=certifi.where()), open_request=_official_open) as response:
             return _read_metadata(response)
     except HTTPError as exc:
         raise RuntimeError(f"USPTO ODP product detail returned HTTP {exc.code}: {uri}") from exc
@@ -214,7 +269,7 @@ def search_odp_products(query: str, api_key: str, api_url: str = DEFAULT_ODP_CAT
         visited.add(uri)
         request = Request(uri, headers={"X-Api-Key": api_key, "Accept": "application/json", "User-Agent": "investment-diligence-pipelines/0.1"})
         try:
-            with open_url_with_retries(request, timeout=60, context=context) as response:
+            with open_url_with_retries(request, timeout=60, context=context, open_request=_official_open) as response:
                 payload = _read_metadata(response)
         except HTTPError as exc:
             raise RuntimeError(f"USPTO ODP catalog returned HTTP {exc.code}: {uri}") from exc
@@ -265,9 +320,11 @@ def review_catalog_artifact(discovery: dict, *, candidate_index: int, reviewer: 
     }
 
 
-def download_bulk_artifact(url: str, output_path: Path, api_key: str | None = None) -> BulkArtifact:
+def download_bulk_artifact(url: str, output_path: Path, api_key: str | None = None, *, expected_size: int | None = None, max_bytes: int | None = None) -> BulkArtifact:
     if not url.startswith(("https://", "http://")):
         raise ValueError("Bulk artifact URL must use http:// or https://")
+    if api_key and (not _official_odp_url(url, f"{ODP_API_PREFIX}files/") or urlparse(url).query):
+        raise ValueError("Authenticated USPTO download requires the official file host and path")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     headers = {"Accept": "*/*", "User-Agent": "investment-diligence-pipelines/0.1"}
     if api_key:
@@ -278,17 +335,38 @@ def download_bulk_artifact(url: str, output_path: Path, api_key: str | None = No
     size = 0
     retrieved_at = datetime.now(timezone.utc).isoformat()
     try:
-        with urlopen(request, timeout=120, context=context) as response, output_path.open("wb") as destination:
+        response = _open_approved_file(request, context) if api_key else urlopen(request, timeout=120, context=context)
+        with response, output_path.open("wb") as destination:
             while chunk := response.read(1024 * 1024):
+                size += len(chunk)
+                if (max_bytes is not None and size > max_bytes) or (expected_size is not None and size > expected_size):
+                    raise ValueError("USPTO artifact exceeds approved byte count")
                 destination.write(chunk)
                 digest.update(chunk)
-                size += len(chunk)
             status_code = getattr(response, "status", 200)
-    except (HTTPError, URLError) as exc:
+            if status_code != 200 or (expected_size is not None and size != expected_size):
+                raise ValueError("USPTO artifact response status or byte count does not match approved metadata")
+    except (HTTPError, URLError, ValueError) as exc:
         if output_path.exists():
             output_path.unlink()
-        detail = f"HTTP {exc.code}" if isinstance(exc, HTTPError) else str(exc.reason)
-        raise RuntimeError(f"Unable to download USPTO ODP artifact {url}: {detail}") from exc
+        detail = f"HTTP {exc.code}" if isinstance(exc, HTTPError) else "network error" if isinstance(exc, URLError) else str(exc)
+        raise RuntimeError(f"Unable to download USPTO ODP artifact {url}: {detail}") from None
     artifact = BulkArtifact(str(output_path), url, retrieved_at, digest.hexdigest(), size, status_code)
     output_path.with_suffix(output_path.suffix + ".json").write_text(json.dumps(asdict(artifact), indent=2) + "\n")
     return artifact
+
+
+def verify_patent_archive(path: Path, *, max_uncompressed_bytes: int) -> dict:
+    """Require exactly the expected TSV and verify ZIP CRC before promotion."""
+    if not zipfile.is_zipfile(path):
+        raise ValueError("USPTO artifact is not a ZIP archive")
+    with zipfile.ZipFile(path) as archive:
+        files = [item for item in archive.infolist() if not item.is_dir()]
+        if len(files) != 1 or files[0].filename != "g_patent.tsv":
+            raise ValueError("USPTO archive does not contain exactly g_patent.tsv")
+        member = files[0]
+        if member.file_size <= 0 or member.file_size > max_uncompressed_bytes:
+            raise ValueError("USPTO archive expands beyond approved size bounds")
+        if archive.testzip() is not None:
+            raise ValueError("USPTO archive failed CRC verification")
+        return {"member_name": member.filename, "uncompressed_bytes": member.file_size, "crc32": f"{member.CRC:08x}"}
