@@ -13,7 +13,32 @@ Scope Crunchbase, FundComb, and OpenVC for **investor mapping and market mapping
 
 The research question is: *Which investors participate in each selected market, and how is observed financing activity changing by area, stage, geography, and time?* The engineering requirement is to capture permitted profiles and deal assertions with provenance, quality checks, reviewed entity matches, and reproducible focus-area classification. An investor preference is different from a recorded investment, and an announced financing amount is different from cash deployed.
 
-**Working assumption:** the pilot uses one to three explicitly defined focus areas and a bounded investor/company watchlist. Each focus area has inclusion and exclusion rules for sectors or technologies, geography, stage, and time period. OpenVC is being considered for investor discovery and stated preferences; its separate startup deal-flow and LP products are outside this pilot until the intended use is confirmed.
+**Selected pilot:** Southeast Asia and relevant nearby markets, focused on defense technologies and dual-use industrial capabilities relevant to China's supply chains. The user wants three distinct decisions: (1) find plausible commercial entry points for suppliers, (2) map dependencies and bottlenecks, and (3) identify alternative suppliers. Here, "entry point" means a lawful commercial opportunity or potential customer/partner to investigate, not a verified purchasing relationship. OpenVC is being considered for investor discovery and stated preferences; its separate startup deal-flow and LP products are outside this pilot until the intended use is confirmed.
+
+### Pilot geography, themes, and analysis window
+
+These are proposed operating boundaries, with owner review before the first live run:
+
+| Dimension | Initial boundary | Classification rule |
+| --- | --- | --- |
+| Core market | Southeast Asian company operations, headquarters, funding, or investors; use a country-level list in configuration covering Indonesia, Malaysia, Singapore, Thailand, Vietnam, Philippines, Brunei, Cambodia, Laos, Myanmar, and Timor-Leste. | Keep headquarters, offices, deal/company location, and investor domicile separate. A global investor in a Southeast Asian deal counts as a participant, not a local firm. |
+| Adjacent comparison | India, Taiwan, Japan, South Korea, and Australia as neighboring capital, supplier, or alternative-market comparators; mainland China as a counterparty and dependency lens. | Comparator markets do not silently enter Southeast Asian totals. Add others only through a versioned scope change. |
+| Focus A | Defense technologies and verifiable dual-use applications: autonomy/uncrewed systems, sensing, secure communications, maritime systems, space-related sensing, and cyber capabilities with a documented defense or critical-infrastructure use. | A generic "AI," "cyber," or "drone" tag alone is insufficient for a defense classification. Preserve the supporting company/product evidence and review status. |
+| Focus B | Critical electronics and industrial inputs: semiconductors, components, batteries/power electronics, advanced materials, precision manufacturing, and test equipment. | Record the specific product/input and downstream use; do not classify all electronics firms as defense suppliers. |
+| Focus C | Supply-chain enabling capabilities: contract manufacturing, logistics/ports, traceability, industrial software, and substitute sourcing for the above inputs. | General logistics or software firms require evidence of the relevant product chain or customer segment. |
+| Time | Proposed default: 2021-01-01 through the latest complete calendar quarter, plus a separately labeled current-quarter view. | Show source observation date separately from deal announcement or stated activity dates. Historical coverage may be incomplete. |
+
+Initial capital-flow cuts are by focus area, company country, investor domicile, financing stage, and quarter. The area taxonomy must support multi-label records and an overall deduplicated total. Later sector expansion requires an explicit taxonomy version and review of its effect on trend comparability.
+
+### Three supply-chain lenses
+
+| Lens | Question and proposed output | Evidence threshold |
+| --- | --- | --- |
+| Commercial entry points | Which companies, manufacturers, system integrators, or investors might connect a supplier to a relevant product chain? Output a ranked **research queue**, including role hypothesis, country, product/theme fit, and evidence links. | A candidate requires a source-backed product/operation signal. An existing customer, supplier, or procurement relationship requires a separate direct source such as a company disclosure, contract, official award, or verified trade/shipment record. |
+| Dependencies and bottlenecks | Which inputs, manufacturing steps, or markets appear concentrated or exposed to China-linked supply? Output a dependency hypothesis map with product/HS-code mapping, country-level trade context, and missing evidence. | The three private-market sources can show investor/deal patterns only. Aggregate trade data may support country/product exposure; firm-level dependency requires additional direct evidence. |
+| Alternative suppliers | Which Southeast Asian or adjacent-market firms plausibly provide substitute capacity, products, or components? Output a candidate list with capability, location, maturity, capital backing, and verification status. | A sector tag or financing event is only a lead. Qualification needs product specifications, capacity, customer/quality evidence, and applicable regulatory/export-control review from separate sources. |
+
+The repository's UN Comtrade Pipeline 03 may supply **aggregate** country/product trade context after its own validation; it does not establish firm-level supplier links. Pipeline 04's current USAspending slice covers US awards and does not provide Southeast Asian procurement coverage. No claim about access to China's supply chain, strategic dependence, or supplier substitutability should be published as a fact solely from Crunchbase, FundComb, or OpenVC.
 
 ## 2. Scope and source assessment
 
@@ -58,6 +83,9 @@ First determine whether OpenVC offers an authorized API, licensed export, or wri
 | REQ-13 | Must | Report source-specific coverage and freshness for the bounded universe, including missing participants/amounts/dates, conflicting claims, stale profiles, unresolved matches, and periods with unknown coverage. A zero count is displayed only when the interval was observed completely under the pilot's source scope. |
 | REQ-14 | Should | Provide market-map views for investor count, active investors, round count, disclosed funding, stage mix, new entrants, and co-investment links, with filters for focus area, geography, and period. Each metric shows its denominator, coverage, and source set. |
 | REQ-15 | Should | Provide a controlled backfill and incremental refresh path after the pilot establishes source behavior and provider permissions. |
+| REQ-16 | Must | Produce three separate research outputs for the selected themes: commercial-entry candidates, dependency/bottleneck hypotheses, and alternative-supplier candidates. Each row states the claim type, evidence grade, source links, reviewer state, and what direct evidence is still missing. |
+| REQ-17 | Must | Keep investor/deal evidence, aggregate trade context, and direct company-level supplier evidence in separate layers. A private-market sector tag or investment cannot create a confirmed supplier/customer edge. A country-level import concentration cannot establish an individual firm's sourcing. |
+| REQ-18 | Should | Compare investor participation across core and adjacent markets and show cross-border co-investment or repeated financing patterns without inferring operational control or supply-chain access from investment alone. |
 
 ## 4. Non-functional requirements and constraints
 
@@ -84,13 +112,16 @@ Proposed grains, subject to licensed fields:
 - `focus_area_definitions`: versioned sectors/themes, geography, stage, time window, inclusion/exclusion rules, and taxonomy owner.
 - `investor_market_map`: one investor × focus area × as-of date, with separate stated-interest and observed-activity evidence, first/last activity, and match status.
 - `focus_area_financing_flow`: one focus area × calendar quarter × geography × stage × source set, with round count, disclosed amount by currency, participation count, coverage, and constituent assertion IDs. Source-native deals remain the auditable base; multi-area attribution is explicit.
+- `commercial_entry_candidates`: one candidate firm/route × focus area, with the hypothesized role, source evidence, direct-relationship status, and review state.
+- `dependency_hypotheses`: one product/input × geography × period, separating aggregate trade exposure from company-specific evidence and recording the inference limits.
+- `alternative_supplier_candidates`: one firm × product/input, with capability evidence, verification gaps, and qualification status.
 - `private_market_coverage`: run-level completion, missingness, freshness, and rights status.
 
 Version any shared contract change. Keep source-only fields in source payloads until another pipeline demonstrates a common need. A published manifest must enumerate source, run, schema version, completeness, rights class, and upstream capture hashes. If provider terms prohibit storing a raw payload or exposing a field to downstream consumers, the product must omit it or remain unpublished.
 
 ## 6. Delivery sequence and dependencies
 
-1. **Focus-area definition:** name one to three pilot themes and their sector/technology synonyms and exclusions, geographies, stages, time window, and decision owner. Define the investor universe and comparison metrics before seeing results.
+1. **Focus-area definition:** review the Southeast Asia and adjacent-market country lists, three proposed themes, inclusion/exclusion rules, stage coverage, and 2021–latest-complete-quarter default. Assign a taxonomy owner and define comparison metrics before seeing results.
 2. **Access and license inventory:** obtain the Crunchbase order form/package and sample responses; FundComb Data-plan/API entitlement and sample `rightsPolicy`; OpenVC written integration/export terms. Record source-policy reviews and retention decisions.
 3. **Contract and fixture review:** use permitted redacted examples or synthetic fixtures to settle field mappings, native IDs, date meanings, and quality thresholds.
 4. **Crunchbase watchlist pilot:** bounded lookup/search, raw capture, normalization, match candidates, quality report, and manifest.
@@ -123,12 +154,13 @@ Full-platform scraping, login automation, CAPTCHA or bot-control workarounds, bu
 
 ## Open Questions
 
-1. **Product owner:** Which one to three sectors or technology themes, geographies, stages, and time window define the first map? What synonyms and exclusions prevent theme drift? Which investor segments should be compared?
+1. **Product owner:** Confirm or amend the proposed country lists, three themes, sector exclusions, funding stages, and 2021–latest-complete-quarter time window. Which investor segments should be compared?
 2. **Crunchbase contract owner:** Which package, fields, quotas, data-use rights, retention, deletion, and derived-product restrictions apply? Is a bulk export licensed?
 3. **FundComb workspace owner:** Is Data API beta enabled, which scopes can be issued, what is the allowed request rate, and how should `rightsPolicy` govern storage and publication?
 4. **OpenVC provider/account owner:** Is there an authorized investor-database API or licensed export, and does it permit automated storage and internal downstream use? Does the desired scope include startup deal flow instead of investor profiles?
 5. **Data/product owners:** What freshness target, refresh cadence, coverage threshold, run budget, and destination audience are required? Who reviews conflicting funding facts and match candidates? Should flow include only announced rounds, or also transactions and comps where the provider's event definition differs?
-6. **Compliance/data owner:** What retention and deletion process satisfies each agreement while preserving auditable lineage?
+6. **Supply-chain research owner:** Which specific product chains or inputs are highest priority within the three themes? Which direct company, trade, procurement, and regulatory sources can validate entry routes, China-linked dependencies, and substitutes?
+7. **Compliance/data owner:** What retention and deletion process satisfies each agreement while preserving auditable lineage? Which defense, dual-use, trade, and export-control constraints apply to the selected product chains and jurisdictions?
 
 ## Acceptance Criteria
 
@@ -143,3 +175,5 @@ Full-platform scraping, login automation, CAPTCHA or bot-control workarounds, bu
 | AC-07 | The diligence analyst validates one to three versioned focus areas and a bounded investor universe before the run. The output shows investor map and quarterly financing-flow metrics for each area, with a drill-through from every aggregate to source assertions. |
 | AC-08 | Synthetic or permitted redacted examples prove that stated interests do not count as deal participation; a multi-theme round is not double-counted in an overall total; a round amount is not presented as investor-level deployment; and incomplete source coverage is not displayed as zero activity. |
 | AC-09 | The analyst confirms that the map answers the stated investor and market questions, with measured coverage, missingness, and freshness against thresholds agreed before the live run. |
+| AC-10 | The three supply-chain lenses each produce a reviewable output for the configured Southeast Asian/adjacent-market pilot. Tests show that an investor tag, funding round, or aggregate trade statistic alone never creates a confirmed company-level supplier, buyer, dependency, or substitute relationship. |
+| AC-11 | Every proposed entry point, bottleneck, or alternative supplier lists supporting evidence, confidence/review status, and the next verification needed; no candidate is presented as qualified capacity or a proven route into China's supply chain. |
