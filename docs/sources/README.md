@@ -12,6 +12,9 @@ These documents describe the external sources currently used or planned for the 
 | [USAspending](usaspending.md) | `usaspending`, `usaspending_transactions` | 04 | No key |
 | [GDELT DOC 2.0](gdelt.md) | `gdelt_doc` | 05 | No key; keep request volume low |
 
+The [FundComb manual-map pilot](fundcomb_manual.md) is an offline research CSV
+workflow. It is not an activated live source or an API connector.
+
 ## Shared credential setup
 
 Keep local values in the ignored file:

@@ -6,6 +6,15 @@ This repository is the upstream data-pipeline boundary for investment diligence.
 
 ## What is working now
 
+Spec 0005 has an offline `map-fundcomb-csv` research pilot. It reads only a
+locally curated CSV of FundComb profile claims and writes a sample report and
+unreviewed observations under `.data/`; it performs no network collection or
+curated publication. The first six-profile, locally held sample contains
+semiconductor-related claims only. It is not representative of Southeast Asian
+investor coverage, and no financing-flow or supplier claims follow from it.
+See the [manual source note](sources/fundcomb_manual.md) and
+[Spec 0005 handoff](specs/0005/HANDOFF.md).
+
 Pipeline `01_entity_graph` has a lightweight real path:
 
 1. Fetch one SEC EDGAR `submissions/CIK##########.json` document.
@@ -121,6 +130,10 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 
 ## Recommended next work
 
+0. For Spec 0005, expand the reviewed Southeast Asian investor sample and
+   establish FundComb Data API entitlement, rights, retention, and rate limits
+   before building any automated collector.
+
 1. Operationalize the completed USPTO index and catalog: schedule approved
    refreshes and add stale-source and failed-refresh alerts.
 2. Use the PostgreSQL migration registry for all future schema changes; the
@@ -151,7 +164,11 @@ python -m diligence_pipelines.cli run 01_entity_graph --cik 320193
 
 ## Current validation result
 
-The repository’s local test suite passes with 82 tests. Pipelines 04 and 05
+The 2026-11-17 suite passes with 135 tests and 2 optional Dagster tests
+skipped because Dagster is not installed. The offline FundComb map was run
+against six locally held profile observations and produced a research-only
+report (six semiconductor claims; zero curated sensor or maritime claims).
+`validate-manifests`, `validate-docs`, and `git diff --check` pass. Pipelines 04 and 05
 publish from their synthetic fixtures to local storage and to a scratch
 PostgreSQL 16 `IDP` database (all ten new tables populated). Their live
 USAspending and GDELT paths were not run because the development sandbox had
