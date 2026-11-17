@@ -45,7 +45,7 @@ The repository's UN Comtrade Pipeline 03 may supply **aggregate** country/produc
 | Source | Proposed pilot | Verified access path | Gate before live collection |
 | --- | --- | --- | --- |
 | Crunchbase | Investor/company profiles, rounds, and investor participation for focus-area activity | Licensed v4 REST API; organization lookup and search documented. Package and field access depend on the order form. | Provisioned key, package/field inventory, order-form rights, retention and downstream-use approval. |
-| FundComb | Investor universe, firm characteristics, and optional transaction comps | Managed-beta Data API for entitled Data-plan workspaces. `GET /api/v1/investors` requires `read:investors`; `GET /api/v1/comps` requires `read:comps`. | Workspace entitlement, scoped key, response `rightsPolicy` review, permitted retention/use, provider rate limit. |
+| FundComb | Investor universe, firm characteristics, and optional transaction comps | User reports FundComb access; whether that includes the managed-beta Data API is unverified. `GET /api/v1/investors` requires `read:investors`; `GET /api/v1/comps` requires `read:comps`. | Confirm Data API entitlement and scoped key, then review response `rightsPolicy`, permitted retention/use, and provider rate limit. |
 | OpenVC | Investor profiles and stated focus preferences if licensed | Public investor database is visible. The published investor-database page advertises CSV import and **CRM** export; this is not evidence of a provider-database export or API entitlement. | Provider-approved API/export or written permission for the intended automated collection, field and retention rights, access/rate controls. No live adapter until resolved. |
 
 ### Crunchbase boundary
@@ -124,8 +124,8 @@ Version any shared contract change. Keep source-only fields in source payloads u
 1. **Focus-area definition:** review the Southeast Asia and adjacent-market country lists, the selected semiconductor/sensor/maritime chains, their product and value-chain tags, inclusion/exclusion rules, stage coverage, and 2021–latest-complete-quarter default. Assign a taxonomy owner and define comparison metrics before seeing results.
 2. **Access and license inventory:** obtain the Crunchbase order form/package and sample responses; FundComb Data-plan/API entitlement and sample `rightsPolicy`; OpenVC written integration/export terms. Record source-policy reviews and retention decisions.
 3. **Contract and fixture review:** use permitted redacted examples or synthetic fixtures to settle field mappings, native IDs, date meanings, and quality thresholds.
-4. **Crunchbase watchlist pilot:** bounded lookup/search, raw capture, normalization, match candidates, quality report, and manifest.
-5. **FundComb investor pilot:** bounded investor pages with rights metadata and coverage report; comps follow only after separate approval.
+4. **FundComb investor pilot:** first confirm `read:investors` Data API access in the user's workspace, then run bounded investor pages with rights metadata and a coverage report for the three selected chains; comps follow only after separate rights review.
+5. **Crunchbase watchlist pilot:** bounded lookup/search, raw capture, normalization, match candidates, quality report, and manifest for financing-flow evidence.
 6. **OpenVC pilot:** only after the access gate; otherwise leave it as a documented candidate source.
 7. **Operational readiness:** review run budgets, schedules, monitoring, deletion handling, and downstream consumer rights before enabling recurring runs.
 
@@ -156,7 +156,7 @@ Full-platform scraping, login automation, CAPTCHA or bot-control workarounds, bu
 
 1. **Product owner:** Confirm or amend the proposed country lists, product/value-chain subcategories, exclusions, funding stages, and 2021–latest-complete-quarter time window. Which investor segments should be compared?
 2. **Crunchbase contract owner:** Which package, fields, quotas, data-use rights, retention, deletion, and derived-product restrictions apply? Is a bulk export licensed?
-3. **FundComb workspace owner:** Is Data API beta enabled, which scopes can be issued, what is the allowed request rate, and how should `rightsPolicy` govern storage and publication?
+3. **FundComb workspace owner:** User reports account access. Is Data API beta enabled in that workspace, can a `read:investors` key be issued, what is the allowed request rate, and how should `rightsPolicy` govern storage and publication?
 4. **OpenVC provider/account owner:** Is there an authorized investor-database API or licensed export, and does it permit automated storage and internal downstream use? Does the desired scope include startup deal flow instead of investor profiles?
 5. **Data/product owners:** What freshness target, refresh cadence, coverage threshold, run budget, and destination audience are required? Who reviews conflicting funding facts and match candidates? Should flow include only announced rounds, or also transactions and comps where the provider's event definition differs?
 6. **Supply-chain research owner:** Within semiconductors, sensors, and maritime systems, which components or value-chain steps should be investigated first? Which direct company, trade, procurement, and regulatory sources can validate entry routes, China-linked dependencies, and substitutes?
