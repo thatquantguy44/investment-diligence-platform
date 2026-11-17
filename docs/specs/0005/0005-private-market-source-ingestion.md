@@ -9,35 +9,35 @@
 
 ## 1. Problem and decision
 
-Scope Crunchbase, FundComb, and OpenVC as possible sources of private-company, financing, and investor evidence for the investment diligence platform. The decision is which source-backed records can be collected, retained, and published under each provider's actual access rights, and whether they improve investor and company coverage beyond the current SEC/GLEIF pilot.
+Scope Crunchbase, FundComb, and OpenVC for **investor mapping and market mapping**: identify investors active or interested in selected sectors, technologies, geographies, and stages, then measure observed financing activity in those focus areas over time. The decision is which investor segments and market areas merit further diligence, with clear evidence and coverage limits.
 
-The research question is whether these providers add useful, verifiable private-market coverage. The engineering requirement is to capture permitted observations with provenance, quality checks, and reviewed entity matches. A provider profile or estimated size is an observation, not proof of legal identity, a completed financing, or investment merit.
+The research question is: *Which investors participate in each selected market, and how is observed financing activity changing by area, stage, geography, and time?* The engineering requirement is to capture permitted profiles and deal assertions with provenance, quality checks, reviewed entity matches, and reproducible focus-area classification. An investor preference is different from a recorded investment, and an announced financing amount is different from cash deployed.
 
-**Working assumption:** the first use case is a bounded watchlist of companies and investors. OpenVC is being considered for investor discovery; its separate startup deal-flow and LP products are outside this pilot until the intended use is confirmed.
+**Working assumption:** the pilot uses one to three explicitly defined focus areas and a bounded investor/company watchlist. Each focus area has inclusion and exclusion rules for sectors or technologies, geography, stage, and time period. OpenVC is being considered for investor discovery and stated preferences; its separate startup deal-flow and LP products are outside this pilot until the intended use is confirmed.
 
 ## 2. Scope and source assessment
 
 | Source | Proposed pilot | Verified access path | Gate before live collection |
 | --- | --- | --- | --- |
-| Crunchbase | Company/investor profiles and financing rounds for a bounded watchlist | Licensed v4 REST API; organization lookup and search documented. Package and field access depend on the order form. | Provisioned key, package/field inventory, order-form rights, retention and downstream-use approval. |
-| FundComb | Published investor profiles and transaction comps | Managed-beta Data API for entitled Data-plan workspaces. `GET /api/v1/investors` requires `read:investors`; `GET /api/v1/comps` requires `read:comps`. | Workspace entitlement, scoped key, response `rightsPolicy` review, permitted retention/use, provider rate limit. |
-| OpenVC | Investor profiles, preferences, stage and sector fit if licensed | Public investor database is visible. The published investor-database page advertises CSV import and **CRM** export; this is not evidence of a provider-database export or API entitlement. | Provider-approved API/export or written permission for the intended automated collection, field and retention rights, access/rate controls. No live adapter until resolved. |
+| Crunchbase | Investor/company profiles, rounds, and investor participation for focus-area activity | Licensed v4 REST API; organization lookup and search documented. Package and field access depend on the order form. | Provisioned key, package/field inventory, order-form rights, retention and downstream-use approval. |
+| FundComb | Investor universe, firm characteristics, and optional transaction comps | Managed-beta Data API for entitled Data-plan workspaces. `GET /api/v1/investors` requires `read:investors`; `GET /api/v1/comps` requires `read:comps`. | Workspace entitlement, scoped key, response `rightsPolicy` review, permitted retention/use, provider rate limit. |
+| OpenVC | Investor profiles and stated focus preferences if licensed | Public investor database is visible. The published investor-database page advertises CSV import and **CRM** export; this is not evidence of a provider-database export or API entitlement. | Provider-approved API/export or written permission for the intended automated collection, field and retention rights, access/rate controls. No live adapter until resolved. |
 
 ### Crunchbase boundary
 
-The pilot requests only licensed organization identifiers, names, URLs, descriptions, locations, categories, investor status, and financing round/investment facts needed by a stated diligence question. Exact fields and collections must be selected from the provisioned package's reference and a sample response. Store the stable Crunchbase UUID separately from the permalink. Preserve round IDs, amounts, currency, announced dates, investor participants, source-native status, and nulls only where the licensed package actually supplies them. Do not imply a company's total funding equals capital currently available.
+The pilot requests only licensed organization identifiers, names, URLs, descriptions, locations, categories, investor status, and financing round/investment facts needed for investor and focus-area mapping. Exact fields and collections must be selected from the provisioned package's reference and a sample response. Store the stable Crunchbase UUID separately from the permalink. Preserve round IDs, amounts, currency, announced dates, investor participants, source-native status, and nulls only where the licensed package actually supplies them. Do not imply a company's total funding equals capital currently available.
 
 Use the v4 lookup endpoint for known organizations and bounded Search API queries for discovery. Search uses `after_id` keyset pagination; hold the query, fields, sort, and limit fixed for a traversal. The documented Enterprise ceiling is 200 requests/minute/key and 3 concurrent requests/key; the runtime cap must be configurable and may be lower. Bulk exports are a distinct, contract-dependent path and are not part of the initial API pilot.
 
 ### FundComb boundary
 
-Pilot `read:investors` first; add `read:comps` only if the comps use case and rights are approved. The official API documents `limit` 1–100, numeric `nextCursor`, and optional text `q` for investors. Comps have an optional exact `sector` filter. Page until `nextCursor` is null or a configured cap is reached; incomplete traversal must be marked incomplete. The response's rights/provenance metadata, including source, confidence, attribution, and `rightsPolicy`, must stay with each observation. FundComb's estimated FUM and transaction comps are attributed estimates/observations, not independently verified fund assets or executed deal economics.
+Pilot `read:investors` first to map the investor universe; add `read:comps` only if transaction evidence, rights, and comparability are approved. The official API documents `limit` 1–100, numeric `nextCursor`, and optional text `q` for investors. Comps have an optional exact `sector` filter. Page until `nextCursor` is null or a configured cap is reached; incomplete traversal must be marked incomplete. The response's rights/provenance metadata, including source, confidence, attribution, and `rightsPolicy`, must stay with each observation. FundComb's estimated FUM and transaction comps are attributed estimates/observations, not independently verified fund assets or executed deal economics.
 
 A free public website does not establish permission for automated collection. The documented Data API entitlement is the proposed access path. The site documents no rate ceiling on the developer page inspected, so the production cap requires provider or contract confirmation.
 
 ### OpenVC boundary
 
-First determine whether OpenVC offers an authorized API, licensed export, or written integration agreement for investor profiles. Verify whether any export covers provider-supplied profiles, as the visible page describes exporting a user's CRM. If access is approved, pilot only firm-level public or licensed fields such as profile URL, firm name, investor type, geography, preferred stages/sectors, check-size range, and last verified/updated date when supplied. Contact details, founder interactions, outreach state, and LP/deal-flow data require separate rights and privacy review. Without an approved access path, limit work to schema design and synthetic fixtures; do not infer an API from website requests or crawl authenticated pages.
+First determine whether OpenVC offers an authorized API, licensed export, or written integration agreement for investor profiles and stated sector/stage/geography preferences. Verify whether any export covers provider-supplied profiles, as the visible page describes exporting a user's CRM. If access is approved, pilot only firm-level public or licensed fields such as profile URL, firm name, investor type, geography, preferred stages/sectors, check-size range, and last verified/updated date when supplied. Contact details, founder interactions, outreach state, and LP/deal-flow data require separate rights and privacy review. Without an approved access path, limit work to schema design and synthetic fixtures; do not infer an API from website requests or crawl authenticated pages.
 
 ## 3. Functional requirements
 
@@ -52,8 +52,12 @@ First determine whether OpenVC offers an authorized API, licensed export, or wri
 | REQ-07 | Must | Handle pagination, retries, rate limits, 429/5xx, credential failures, and partial runs. Retry only transient failures with bounded backoff; stop on access denial or policy change. Never publish a partial traversal as complete. |
 | REQ-08 | Must | Preserve corrections, removals, and changed values as later observations. Record provider publication/update dates only when supplied; retrieval time cannot substitute for them. |
 | REQ-09 | Must | Quality gates check required IDs, referential links, duplicate native IDs, monetary units, date ordering, pagination completeness, source rights, and provenance. Failed gates block curated publication and leave a report. |
-| REQ-10 | Should | Publish source-specific coverage and freshness reports for the bounded watchlist, including missing fields, conflicting claims, stale records, and unresolved matches. |
-| REQ-11 | Should | Provide a controlled backfill and incremental refresh path after the pilot establishes source behavior and provider permissions. |
+| REQ-10 | Must | Define each focus area with a versioned inclusion/exclusion taxonomy, geography, stage, and analysis window. Store the source fields and rule version behind each area assignment; unclassified and ambiguous records remain visible. A rule change generates a new map version rather than silently rewriting history. |
+| REQ-11 | Must | Produce an investor map by focus area: distinct investor IDs, investor type, headquarters/office geography when supplied, stated interests, observed participation, first/last observed deal dates, and source coverage. Show evidence and confidence separately for stated interest and actual participation. |
+| REQ-12 | Must | Produce financing-flow observations by focus area and calendar quarter: distinct rounds, participating investors, disclosed round amount by original currency, stage, company geography, and announcement date. Define attribution when a deal spans multiple focus areas and avoid double-counting in totals. Do not label round amount as an investor's deployed capital unless an investor-specific amount is reported. |
+| REQ-13 | Must | Report source-specific coverage and freshness for the bounded universe, including missing participants/amounts/dates, conflicting claims, stale profiles, unresolved matches, and periods with unknown coverage. A zero count is displayed only when the interval was observed completely under the pilot's source scope. |
+| REQ-14 | Should | Provide market-map views for investor count, active investors, round count, disclosed funding, stage mix, new entrants, and co-investment links, with filters for focus area, geography, and period. Each metric shows its denominator, coverage, and source set. |
+| REQ-15 | Should | Provide a controlled backfill and incremental refresh path after the pilot establishes source behavior and provider permissions. |
 
 ## 4. Non-functional requirements and constraints
 
@@ -77,18 +81,22 @@ Proposed grains, subject to licensed fields:
 - `private_market_financing_assertions`: one provider-native funding round or investment assertion per observation; amount, currency, date, participants, and source status remain source-specific.
 - `investor_fit_observations`: one provider-stated stage, sector, geography, or check-size preference per investor profile observation. This is a stated preference, not evidence of willingness to invest.
 - `private_market_match_candidates`: proposed links to canonical Pipeline 01 entities, with evidence, score/method, and review status.
+- `focus_area_definitions`: versioned sectors/themes, geography, stage, time window, inclusion/exclusion rules, and taxonomy owner.
+- `investor_market_map`: one investor × focus area × as-of date, with separate stated-interest and observed-activity evidence, first/last activity, and match status.
+- `focus_area_financing_flow`: one focus area × calendar quarter × geography × stage × source set, with round count, disclosed amount by currency, participation count, coverage, and constituent assertion IDs. Source-native deals remain the auditable base; multi-area attribution is explicit.
 - `private_market_coverage`: run-level completion, missingness, freshness, and rights status.
 
 Version any shared contract change. Keep source-only fields in source payloads until another pipeline demonstrates a common need. A published manifest must enumerate source, run, schema version, completeness, rights class, and upstream capture hashes. If provider terms prohibit storing a raw payload or exposing a field to downstream consumers, the product must omit it or remain unpublished.
 
 ## 6. Delivery sequence and dependencies
 
-1. **Access and license inventory:** obtain the Crunchbase order form/package and sample responses; FundComb Data-plan/API entitlement and sample `rightsPolicy`; OpenVC written integration/export terms. Record source-policy reviews and retention decisions.
-2. **Contract and fixture review:** use permitted redacted examples or synthetic fixtures to settle field mappings, native IDs, date meanings, and quality thresholds.
-3. **Crunchbase watchlist pilot:** bounded lookup/search, raw capture, normalization, match candidates, quality report, and manifest.
-4. **FundComb investor pilot:** bounded investor pages with rights metadata and coverage report; comps follow only after separate approval.
-5. **OpenVC pilot:** only after the access gate; otherwise leave it as a documented candidate source.
-6. **Operational readiness:** review run budgets, schedules, monitoring, deletion handling, and downstream consumer rights before enabling recurring runs.
+1. **Focus-area definition:** name one to three pilot themes and their sector/technology synonyms and exclusions, geographies, stages, time window, and decision owner. Define the investor universe and comparison metrics before seeing results.
+2. **Access and license inventory:** obtain the Crunchbase order form/package and sample responses; FundComb Data-plan/API entitlement and sample `rightsPolicy`; OpenVC written integration/export terms. Record source-policy reviews and retention decisions.
+3. **Contract and fixture review:** use permitted redacted examples or synthetic fixtures to settle field mappings, native IDs, date meanings, and quality thresholds.
+4. **Crunchbase watchlist pilot:** bounded lookup/search, raw capture, normalization, match candidates, quality report, and manifest.
+5. **FundComb investor pilot:** bounded investor pages with rights metadata and coverage report; comps follow only after separate approval.
+6. **OpenVC pilot:** only after the access gate; otherwise leave it as a documented candidate source.
+7. **Operational readiness:** review run budgets, schedules, monitoring, deletion handling, and downstream consumer rights before enabling recurring runs.
 
 The source owner/contract holder owns access and commercial terms; data engineering owns adapter behavior and provenance; a diligence analyst owns match reviews and whether the resulting fields answer a research question; a privacy/compliance reviewer owns person data and redistribution decisions. These are proposed roles, not assumed sign-offs.
 
@@ -115,11 +123,11 @@ Full-platform scraping, login automation, CAPTCHA or bot-control workarounds, bu
 
 ## Open Questions
 
-1. **Product owner:** Which diligence decisions take priority: company financing verification, investor mapping, comparable deals, or investor fit? What pilot watchlist and geography should measure value?
+1. **Product owner:** Which one to three sectors or technology themes, geographies, stages, and time window define the first map? What synonyms and exclusions prevent theme drift? Which investor segments should be compared?
 2. **Crunchbase contract owner:** Which package, fields, quotas, data-use rights, retention, deletion, and derived-product restrictions apply? Is a bulk export licensed?
 3. **FundComb workspace owner:** Is Data API beta enabled, which scopes can be issued, what is the allowed request rate, and how should `rightsPolicy` govern storage and publication?
 4. **OpenVC provider/account owner:** Is there an authorized investor-database API or licensed export, and does it permit automated storage and internal downstream use? Does the desired scope include startup deal flow instead of investor profiles?
-5. **Data/product owners:** What freshness target, refresh cadence, coverage threshold, run budget, and destination audience are required? Who reviews conflicting funding facts and match candidates?
+5. **Data/product owners:** What freshness target, refresh cadence, coverage threshold, run budget, and destination audience are required? Who reviews conflicting funding facts and match candidates? Should flow include only announced rounds, or also transactions and comps where the provider's event definition differs?
 6. **Compliance/data owner:** What retention and deletion process satisfies each agreement while preserving auditable lineage?
 
 ## Acceptance Criteria
@@ -132,4 +140,6 @@ Full-platform scraping, login automation, CAPTCHA or bot-control workarounds, bu
 | AC-04 | Tests show 429/5xx retry behavior, 401/403 stop behavior, redirect host rejection, duplicate-page protection, interrupted pagination, changed source facts, and restricted-rights exclusion. |
 | AC-05 | No curated record publishes without its source ID, source-native identifier, observation time, evidence reference, rights class, and passing quality result. |
 | AC-06 | At least one exact-ID match, one ambiguous match, one conflicting cross-source assertion, and one later revision are reviewed in fixtures or a permitted redacted sample. |
-| AC-07 | The diligence analyst validates that the chosen pilot records answer the stated research question, with measured watchlist coverage, missingness, and freshness against thresholds agreed before the run. |
+| AC-07 | The diligence analyst validates one to three versioned focus areas and a bounded investor universe before the run. The output shows investor map and quarterly financing-flow metrics for each area, with a drill-through from every aggregate to source assertions. |
+| AC-08 | Synthetic or permitted redacted examples prove that stated interests do not count as deal participation; a multi-theme round is not double-counted in an overall total; a round amount is not presented as investor-level deployment; and incomplete source coverage is not displayed as zero activity. |
+| AC-09 | The analyst confirms that the map answers the stated investor and market questions, with measured coverage, missingness, and freshness against thresholds agreed before the live run. |
