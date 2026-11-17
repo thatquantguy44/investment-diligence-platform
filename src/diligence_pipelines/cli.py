@@ -17,6 +17,7 @@ from diligence_pipelines.contracts import Entity
 from diligence_pipelines.docs_validation import validate_docs
 from diligence_pipelines.entities import load_entity_candidates
 from diligence_pipelines.financials import derive_financial_metrics, financial_coverage_report
+from diligence_pipelines.fundcomb_manual import write_manual_map
 from diligence_pipelines.event_evaluation import compare_extractors, evaluate_extractor, load_labeled_examples
 from diligence_pipelines.llm_events import LLMEventExtractor, OllamaClient
 from diligence_pipelines.events import RuleBasedEventExtractor, derive_event_outputs, event_coverage_report, load_event_query
@@ -1090,6 +1091,9 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate-manifests")
     subparsers.add_parser("validate-docs")
+    fundcomb_parser = subparsers.add_parser("map-fundcomb-csv", help="Build an offline research map from manually reviewed FundComb profile observations")
+    fundcomb_parser.add_argument("--input", type=Path, required=True, help="Local analyst-curated CSV; no pages are fetched")
+    fundcomb_parser.add_argument("--output-dir", type=Path, required=True, help="Local research output directory, preferably under .data/")
     validate_trade_parser = subparsers.add_parser("validate-comtrade", help="Validate a Comtrade response without publishing")
     validate_trade_parser.add_argument("--period", required=True)
     validate_trade_parser.add_argument("--reporter-code", required=True)
@@ -1197,6 +1201,13 @@ def main() -> int:
         return validate_manifests()
     if args.command == "validate-docs":
         return validate_docs(ROOT)
+    if args.command == "map-fundcomb-csv":
+        try:
+            report = write_manual_map(args.input, args.output_dir)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        print(json.dumps(report, indent=2))
+        return 0
     if args.command == "validate-comtrade":
         return validate_comtrade(args.period, args.reporter_code, args.partner_code, args.flow_code, args.hs_code, args.trade_fixture, Settings.from_env())
     if args.command == "validate-sec-facts":

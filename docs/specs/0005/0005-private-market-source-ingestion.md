@@ -7,6 +7,8 @@
 **Last updated:** 2026-11-17  
 **Branch:** `feature/ingest-crunchbase-fundcomb-openvc`
 
+**Roadmap:** [ROADMAP.md](ROADMAP.md) | [Handoff](HANDOFF.md) | [Master roadmap](../../MASTER_ROADMAP.md)
+
 ## 1. Problem and decision
 
 Scope Crunchbase, FundComb, and OpenVC for **investor mapping and market mapping**: identify investors active or interested in selected sectors, technologies, geographies, and stages, then measure observed financing activity in those focus areas over time. The decision is which investor segments and market areas merit further diligence, with clear evidence and coverage limits.
